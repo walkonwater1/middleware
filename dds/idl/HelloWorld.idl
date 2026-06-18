@@ -1,0 +1,26 @@
+/**
+ * DDS IDL 定义 — 车辆状态数据类型
+ *
+ * 编译: cyclonedds pycdr 会自动解析此 IDL,
+ * 或使用 idlc 编译为 C/C++ 代码
+ */
+module vehicle
+{
+    enum VehicleStatus {
+        STOPPED,      // 停止
+        RUNNING,      // 行驶中
+        CHARGING,     // 充电中
+        ERROR         // 异常
+    };
+
+    struct VehicleState
+    {
+        string<32> vehicle_id;   // 车辆ID
+        double speed;            // 速度 (km/h)
+        double latitude;         // 纬度
+        double longitude;        // 经度
+        double battery_soc;      // 电池电量 (%)
+        VehicleStatus status;    // 车辆状态
+        long long timestamp;     // 时间戳 (微秒)
+    };
+};

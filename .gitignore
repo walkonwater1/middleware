@@ -1,0 +1,54 @@
+# 构建输出
+build/
+*.o
+*.obj
+*.exe
+*.out
+*.a
+
+# 各项目生成文件
+mqtt/publisher
+mqtt/subscriber
+zmq/req_rep_server
+zmq/req_rep_client
+zmq/pub_sub_publisher
+zmq/pub_sub_subscriber
+gdbus/gdbus-demo-service
+gdbus/gdbus-demo-client
+dds/publisher
+dds/subscriber
+dds/build/VehicleState.h
+dds/build/VehicleState.c
+
+# SOME/IP
+someip/vehicle_service
+someip/vehicle_client
+
+# CANopen
+canopen/canopen_node
+canopen/canopen_master
+
+# EtherCAT
+ethercat/ethercat_master
+ethercat/ethercat_slave
+
+# 共享内存
+shm/shm_writer
+shm/shm_reader
+shm/shm_sem_producer
+shm/shm_sem_consumer
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# ROS2
+ros2/**/install/
+ros2/**/log/
+ros2/**/build/
+
+# OS
+.DS_Store
+Thumbs.db

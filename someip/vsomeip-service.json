@@ -1,0 +1,31 @@
+{
+    "service": "vehicle_service",
+    "network": "127.0.0.1",
+    "unicast": "127.0.0.1",
+    "routing": "vehicle_service",
+    "applications": [
+        {
+            "name": "vehicle_service",
+            "id": "0x1314"
+        }
+    ],
+    "services": [
+        {
+            "service": "0x1234",
+            "instance": "0x5678",
+            "unreliable": "30509",
+            "protocol": "udp"
+        }
+    ],
+    "service-discovery": {
+        "enable": "true",
+        "multicast": "224.244.224.245",
+        "port": "30490",
+        "protocol": "udp",
+        "initial_delay_min": "10",
+        "initial_delay_max": "100",
+        "repetitions_base_delay": "200",
+        "repetitions_max": "3",
+        "ttl": "3"
+    }
+}
