@@ -1,0 +1,66 @@
+syntax = "proto3";
+
+package vehicle_can;
+
+/* ============================================================
+ * 车辆 CAN 总线 — Protobuf 消息定义
+ *
+ * 用于车载 CAN 数据采集 → MQTT 上报的标准消息格式。
+ *
+ * 编译方式:
+ *   protoc --python_out=../ proto/vehicle_can.proto
+ * ============================================================ */
+
+// ---------- 原始 CAN 帧 ----------
+// 保留原始帧结构，供下游做原始数据回放或转储
+message CanFrame {
+  uint32 can_id      = 1;  // CAN ID (11-bit 标准帧)
+  uint32 timestamp_ms = 2;  // 采集时间戳 (ms)
+  bytes  data        = 3;  // CAN 数据域 (0 ~ 8 字节)
+  uint32 dlc         = 4;  // Data Length Code (数据长度)
+}
+
+// ---------- 档位枚举 ----------
+enum GearPosition {
+  GEAR_UNKNOWN = 0;
+  GEAR_P       = 1;  // 驻车
+  GEAR_R       = 2;  // 倒车
+  GEAR_N       = 3;  // 空档
+  GEAR_D       = 4;  // 前进
+  GEAR_S       = 5;  // 运动
+}
+
+// ---------- 制动状态 ----------
+enum BrakeState {
+  BRAKE_OFF      = 0;
+  BRAKE_ENGAGED  = 1;
+  BRAKE_ABS_ACTIVE = 2;
+}
+
+// ---------- 解析后的整车信号 ----------
+// 一条消息包含同一时刻所有已解析的 CAN 信号快照
+message VehicleSignals {
+  string vehicle_id    = 1;   // 车辆唯一标识 (VIN 或自定义)
+  uint64 timestamp     = 2;   // Unix 秒级时间戳
+
+  // 动力域
+  float engine_speed      = 3;   // 发动机转速 (rpm)
+  float vehicle_speed     = 4;   // 车速 (km/h)
+  float throttle_position = 5;   // 油门开度 (%)
+
+  // 热管理 & 电气
+  float coolant_temp     = 6;    // 冷却液温度 (°C)
+  float battery_voltage  = 7;    // 电池电压 (V)
+  float fuel_level       = 8;    // 燃油量 (%)
+
+  // 底盘 & 传动
+  GearPosition gear_position  = 9;    // 档位
+  float steering_angle        = 10;   // 方向盘转角 (deg, 左负右正)
+  float steering_rate         = 11;   // 转向速率 (deg/s)
+
+  // 制动
+  BrakeState brake_switch = 12;  // 制动开关
+
+  // 里程
+  float odometer = 13;  // 累计里程 (km)
+}

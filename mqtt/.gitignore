@@ -1,0 +1,9 @@
+build/
+build_deps/
+build_arm/
+*.o
+*.a
+# Windows 残留
+*.py
+requirements.txt
+generate_proto.bat
