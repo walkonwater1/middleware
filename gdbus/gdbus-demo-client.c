@@ -7,6 +7,7 @@
  */
 
 #include <gio/gio.h>
+#include <locale.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -179,6 +180,9 @@ main(int argc, char *argv[])
 {
     (void)argc;
     (void)argv;
+
+    /* Initialize locale for proper UTF-8 output (fixes garbled Chinese text) */
+    setlocale(LC_ALL, "");
 
     g_print("=== GDBus 车辆信息客户端 ===\n\n");
 
