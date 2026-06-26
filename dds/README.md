@@ -124,6 +124,65 @@ dds_lset_subscription_matched(l, on_matched);   // 匹配通知回调
 dds_set_listener(reader, l);                    // ROS2 spin() 的底层
 ```
 
+## dds_read vs dds_take
+
+| 特性 | `dds_read` | `dds_take` |
+|------|-----------|-----------|
+| 读取数据 | ✅ | ✅ |
+| 移除数据 | ❌ 数据保留在 Reader 缓存 | ✅ 读取后从缓存移除 |
+| 重复读取 | ✅ 下次还能读到同一条 | ❌ 读一次就没了 |
+| 适用场景 | 状态同步 (需历史) | 事件处理 (一次性) |
+| QoS 配合 | 通常用 TransientLocal | 任何 QoS 均可 |
+| 内存占用 | 缓存不释放, 持续增长 | 读后释放, 内存稳定 |
+| 推荐用法 | 定期轮询检查状态 | Listener 回调中处理事件 |
+
+```c
+// dds_read — 保留数据, 适合"当前状态查询"
+//   RobotStatus 用 dds_read: 即使错过几条, 仍能读到最新的状态
+dds_read(rd, samples, infos, 4, 4);
+
+// dds_take — 消费数据, 适合"事件流处理"  
+//   TaskCommand 用 dds_take: 每条命令只处理一次, 避免重复执行
+dds_take(rd, samples, infos, 8, 8);
+```
+
+## 轮询 (Polling) vs 回调 (Listener)
+
+| 特性 | 轮询 `dds_read` | 回调 `dds_lset_data_available` |
+|------|----------------|-------------------------------|
+| 模式 | Pull (主动拉取) | Push (被动接收) |
+| 延迟 | ~轮询间隔 (如 100ms) | ~微秒级 (立即触发) |
+| CPU | 持续唤醒, 空转 | 数据到达才触发, 空闲休眠 |
+| 复杂度 | 简单 | 需管理 Listener 生命周期 |
+| 对应 ROS2 | 自定义轮询 | `rclcpp::spin()` 底层 |
+| 适用场景 | 低频状态查询 | 高频事件/指令处理 |
+
+```
+轮询模式:                    回调模式:
+  while(running) {              while(running) {
+    dds_read()  ← 100ms间隔       sleep(1)    ← 不轮询
+    usleep(100000)              }
+  }
+                                on_data() ← 数据到达立即触发
+```
+
+## 0.8.x Loan API 要点
+
+```c
+// ★ CycloneDDS 0.8.x 必须使用 void* 指针数组
+void* samples[4] = {0};              // 必须零初始化
+dds_sample_info_t infos[4];
+memset(infos, 0, sizeof(infos));     // 必须零初始化
+
+int n = dds_read(rd, samples, infos, 4, 4);  // 或 dds_take
+for (int i = 0; i < n; i++) {
+    if (!infos[i].valid_data) continue;
+    YourType* data = samples[i];     // void* → 类型指针
+    // 使用 data->field
+}
+if (n > 0) dds_return_loan(rd, samples, n);  // ★ 必须归还 loan
+```
+
 ## 主流 DDS 实现
 
 | 实现 | 特点 | 许可证 |
