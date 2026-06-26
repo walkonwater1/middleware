@@ -1,137 +1,146 @@
 # 通信中间件学习
 
-> 车载与机器人通讯中间件学习仓库
+> 车载与机器人通讯中间件学习仓库 — 覆盖从底层 IPC 到云端 IoT 的完整通信技术栈
 
-本仓库用于学习和对比车载/机器人领域主流通讯中间件，通过实践掌握各自的原理、适用场景和最佳实践。
+## 动机
 
-## 中间件列表
+车载和机器人系统需要多种通信机制各司其职：关节电机通过实时总线同步、ECU 间通过服务发现协商、传感器数据通过零拷贝共享、远程状态通过 MQTT 上报云端。本仓库通过可运行的 Demo 逐一实践每种中间件，理解其设计取舍和适用边界。
 
-| 中间件 | 类型 | 典型场景 | 语言 | Lab 数量 |
-|--------|------|----------|------|----------|
-| [DDS](./dds/) | 去中心化 Pub/Sub | 自动驾驶、军工、实时分布式系统 | C (CycloneDDS) | 11 |
-| [ROS2](./ros2/) | Pub/Sub + Service + Action | 机器人操作系统核心通信层 | C++ (rclcpp) | 16 |
-| [GDBus](./gdbus/) | RPC + 信号 | Linux 桌面/嵌入式系统服务间通信 | C++17 | 1 |
-| [SOME/IP](./someip/) | 服务导向 (Service Discovery) | 车载以太网 ECU 间通信 | C++ (vsomeip) | 1 |
-| [CANopen](./canopen/) | 基于 CAN 的应用层协议 | 机器人关节电机/传感器通信 | C++ | 1 |
-| [EtherCAT](./ethercat/) | 工业实时以太网 | 机器人多轴同步 + 分布式时钟 | C | 1 |
-| [MQTT](./mqtt/) | Broker Pub/Sub | IoT、车联网、遥测数据传输 | C (Paho) | 1 |
-| [ZeroMQ](./zmq/) | 多种模式 (无Broker) | 进程间高性能通信、分布式系统 | C++ (cppzmq) | 1 |
-| [共享内存](./shm/) | 内存映射 | 超低延迟 IPC、大块数据传输、零拷贝 | C (POSIX) | 1 |
+## 中间件全景
+
+### 实时总线 (硬实时、确定性)
+
+| 中间件 | 定位 | 确定性 | 典型带宽 |
+|--------|------|--------|---------|
+| **[EtherCAT](./ethercat/)** | 工业实时以太网，多轴同步 | μs 级 DC 时钟 | 100 Mbps |
+| **[CANopen](./canopen/)** | 基于 CAN 的应用层协议 | ms 级 | 1 Mbps |
+
+**EtherCAT** — "总线即中间件"。帧在从站间"飞读飞写"，主站 1kHz 扫描 3 轴伺服，分布式时钟 <100ns 同步。CoE (CANopen over EtherCAT) 让 CANopen 对象字典运行在 EtherCAT 物理层上。
+
+**CANopen** — 机器人关节的"领域语言"。PDO 循环推送电机状态、SDO 读写配置参数、NMT 管理从机生命周期、Heartbeat + EMCY 监控健康。虚拟 CAN 总线演示，无需真实硬件。
+
+### 车载 SOA (服务导向)
+
+| 中间件 | 定位 | 通信模式 | 传输层 |
+|--------|------|---------|--------|
+| **[SOME/IP](./someip/)** | AUTOSAR 车载以太网 | Service Discovery + RPC | UDP/TCP |
+| **[DDS](./dds/)** | 去中心化实时数据分发 | Pub/Sub (P2P, 无 Broker) | UDP 组播 |
+
+**SOME/IP** — AUTOSAR Adaptive 平台标准。Service Discovery 动态发现、Request/Response RPC 远程调用、Fire&Forget 事件推送。演示车载服务端发布车门/车速事件、提供车窗控制方法、客户端自动发现并订阅。
+
+**DDS** — OMG 国际标准，ROS2 底层。11 个 Lab 从 Pub/Sub 入门到 QoS/Listener/Security/Benchmark 全覆盖。去中心化无 Broker，SPDP/SEDP 自动发现，20+ QoS 策略组合。
+
+### 机器人中间件
+
+| 中间件 | 定位 | 通信模式 | 语言 |
+|--------|------|---------|------|
+| **[ROS2](./ros2/)** | 机器人操作系统通信层 | Pub/Sub + Service + Action | C++ (rclcpp) |
+
+**ROS2** — 建立在 DDS 之上的机器人集成框架。16 个 Lab 覆盖 Topic/Service/Action/QoS，延伸到 TF2 坐标变换、Rosbag2 录制回放、Loan Message 零拷贝、多机自动发现、DDS 供应商切换、MQTT 桥接。`dds_bridge` 验证 ROS2 底层即 DDS。
+
+### 进程间通信 (IPC)
+
+| 中间件 | 定位 | 延迟 | 拷贝次数 |
+|--------|------|------|---------|
+| **[共享内存](./shm/)** | POSIX 共享内存映射 | ~ns 级 | 0 (零拷贝) |
+| **[ZeroMQ](./zmq/)** | 高性能异步消息库 | ~μs 级 | 1 |
+| **[GDBus](./gdbus/)** | Linux 桌面/嵌入式 IPC | ~μs 级 | 1 |
+
+**共享内存** — IPC 延迟下限。`mmap` 映射同一物理页，A 进程写入 B 进程立即可见。信号量保护 + 无锁环形缓冲 SPMC 队列。这是 ROS2 Loan Message 和 iceoryx 的底层原理。
+
+**ZeroMQ** — "不是消息队列，是没有 Broker 的消息库"。REQ/REP 车辆诊断 RPC、PUB/SUB 机器人传感器广播。4 种模式，无需中心节点。
+
+**GDBus** — Linux 系统总线的 IPC 标准。XML 接口定义 → gdbus-codegen + Python 代码生成 → C++17 RAII 封装。机器人状态管理服务 + 监控终端，方法/信号/属性齐全。
+
+### 车联网 / IoT (云-边-端)
+
+| 中间件 | 定位 | 通信模式 | 传输层 |
+|--------|------|---------|--------|
+| **[MQTT](./mqtt/)** | IoT 标准消息协议 | Pub/Sub (有 Broker) | TCP |
+
+**MQTT** — 车载终端到云端的桥梁。模拟 5 路 CAN 信号 → Protobuf 序列化 → MQTT 发布，支持 MQTT v5 和 GB/T 32960 国标电动车远程监控协议。aarch64 交叉编译支持车载嵌入式部署。
+
+## 选型决策矩阵
+
+| 场景 | 推荐中间件 | 原因 |
+|------|-----------|------|
+| 机器人关节多轴同步控制 | EtherCAT / CANopen | 硬实时、分布式时钟、确定性延迟 |
+| ECU 间服务调用 (车门/车窗) | SOME/IP | Service Discovery、AUTOSAR 标准 |
+| 自动驾驶传感器数据分发 | DDS (ROS2) | 去中心化、QoS 可配、RTPS 实时 |
+| 机器人上层算法集成 | ROS2 | TF2/rosbag2/Lifecycle 完整工具链 |
+| 激光雷达点云进程间传输 | 共享内存 | 零拷贝、GB/s 级吞吐 |
+| 微服务间异步消息 | ZeroMQ | 无 Broker、灵活拓扑 |
+| Linux 系统服务管理 | GDBus (D-Bus) | systemd/NetworkManager 原生协议 |
+| 车辆远程监控/OTA | MQTT | 穿透防火墙、低带宽、QoS 分级 |
 
 ## 目录结构
 
 ```
 middleware/
-├── dds/                       # DDS 学习 (11 Lab)
-│   ├── vehicle/               #   9 个车载概念实验
-│   ├── robot/                 #   2 个机器人系统 Demo
-│   ├── idl/                   #   3 个 IDL 定义
-│   ├── scripts/               #   一键启动 + 安全证书生成
-│   └── README.md
-│
-├── ros2/                      # ROS2 学习 (16 Lab)
-│   ├── topic_lab/             #   Pub/Sub + 自定义消息
-│   ├── service_lab/           #   Service 请求/响应
-│   ├── action_lab/            #   Action 异步任务
-│   ├── qos_lab/               #   QoS 对比实验
-│   ├── lifecycle_lab/         #   Lifecycle 生命周期
-│   ├── composition_lab/       #   进程内 Composition
-│   ├── param_lab/             #   动态参数
-│   ├── launch_lab/            #   Launch 文件编排
-│   ├── tf2_lab/               #   TF2 坐标变换
-│   ├── rosbag2_lab/           #   Rosbag2 录制/回放
-│   ├── loan_lab/              #   Loan Message 零拷贝
-│   ├── multimachine_lab/      #   多机分布式通信
-│   ├── dds_vendor_lab/        #   DDS 供应商切换
-│   ├── mqtt_lab/              #   MQTT 桥接
-│   ├── dds_bridge/            #   DDS↔ROS2 桥接验证
-│   ├── scripts/               #   一键启动菜单
-│   └── README.md
-│
-├── gdbus/                     # GDBus/D-Bus 学习
-│   ├── src/                   #   C++17 服务端+客户端
-│   ├── interfaces/            #   D-Bus 接口 XML
-│   ├── scripts/               #   代码生成器 + 构建脚本
-│   └── README.md
-│
-├── someip/                    # SOME/IP 车载服务通信
-├── canopen/                   # CANopen 应用层协议
-├── ethercat/                  # EtherCAT 工业实时以太网
-├── mqtt/                      # MQTT Broker 发布/订阅
-├── zmq/                       # ZeroMQ 多模式通信
-├── shm/                       # 共享内存 IPC
+├── ethercat/                   # EtherCAT 工业实时以太网 (1 kHz, 3 轴)
+├── canopen/                    # CANopen 应用层协议 (PDO/SDO/NMT/EMCY)
+├── someip/                     # SOME/IP 车载 SOA (vsomeip)
+├── dds/                        # DDS 去中心化 Pub/Sub (11 Lab)
+├── ros2/                       # ROS2 机器人集成框架 (16 Lab)
+├── shm/                        # 共享内存 IPC (零拷贝)
+├── zmq/                        # ZeroMQ 高性能消息库 (4 模式)
+├── gdbus/                      # GDBus/D-Bus Linux IPC
+├── mqtt/                       # MQTT IoT 协议 (CAN→Protobuf→MQTT)
 └── README.md
-```
-
-## 构建方式
-
-```bash
-# DDS
-cd dds && mkdir -p build && cd build && cmake .. && make -j$(nproc)
-
-# ROS2
-cd ros2
-source /opt/ros/humble/setup.bash
-colcon build --packages-select topic_lab service_lab action_lab qos_lab \
-  lifecycle_lab composition_lab param_lab launch_lab tf2_lab rosbag2_lab \
-  loan_lab multimachine_lab dds_vendor_lab mqtt_lab dds_bridge
-# 或: bash scripts/run_all_labs.sh → 15) build
-
-# GDBus
-cd gdbus && mkdir -p build && cd build && cmake .. && make -j$(nproc)
-
-# SOME/IP
-cd someip && mkdir -p build && cd build && cmake .. && make -j$(nproc)
-
-# CANopen
-cd canopen && mkdir -p build && cd build && cmake .. && make -j$(nproc)
-
-# EtherCAT
-cd ethercat && mkdir -p build && cd build && cmake .. && make -j$(nproc)
-
-# MQTT
-cd mqtt && mkdir -p build && cd build && cmake .. && make -j$(nproc)
-
-# ZeroMQ
-cd zmq && mkdir -p build && cd build && cmake .. && make -j$(nproc)
-
-# 共享内存
-cd shm && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 ```
 
 ## 学习路线
 
-1. **DDS (基础)** — 理解去中心化 Pub/Sub，QoS 策略，Listener 回调 → 为 ROS2 打基础
-2. **ROS2 (进阶)** — 从 Topic/Service/Action 到 TF2/Rosbag2/Loan/Multi-machine/DDS Vendor
-3. **GDBus (横向对比)** — 同是进程间通信，对比 D-Bus RPC 与 DDS Pub/Sub 的架构差异
-4. **车载协议 (SOME/IP / CANopen / EtherCAT)** — 车载 ECU 和机器人关节电机的工业协议
-5. **IoT (MQTT / ZeroMQ)** — 云-边-端通信链路
-6. **性能极致 (共享内存)** — 核内零拷贝 IPC
+按通信层次从底层到上层逐步推进：
 
-## DDS ↔ ROS2 关系
+1. **IPC 基础** → `shm/` (零拷贝原理) → `zmq/` (多模式消息) → `gdbus/` (系统 IPC)
+2. **实时总线** → `canopen/` (CAN 应用层) → `ethercat/` (工业以太网)
+3. **车载 SOA** → `someip/` (AUTOSAR 服务发现) → `dds/` (去中心化 Pub/Sub)
+4. **机器人集成** → `ros2/` (DDS 之上的完整框架，16 Lab)
+5. **云边通信** → `mqtt/` (CAN→云端全链路)
 
-```
-DDS (CycloneDDS C API)          ROS2 (rclcpp C++ API)
-╔═══════════════════╗          ╔══════════════════╗
-║  DataWriter       ║  ─────→ ║  Publisher       ║
-║  DataReader       ║  ←───── ║  Subscription    ║
-║  Topic            ║  ─────→ ║  Topic           ║
-║  QoS              ║  ─────→ ║  QoS             ║
-║  Listener         ║  ─────→ ║  spin()          ║
-║  Domain           ║  ─────→ ║  ROS_DOMAIN_ID   ║
-╚═══════════════════╝          ╚══════════════════╝
-        ↑                              ↑
-        └──── dds_bridge ──────────────┘
-          (同进程验证 DDS=ROS2 底层)
+## 构建速查
+
+所有子项目均使用 CMake 构建：
+
+```bash
+# EtherCAT         依赖: librt, libpthread
+cd ethercat && mkdir -p build && cd build && cmake .. && make -j$(nproc)
+
+# CANopen          依赖: 无 (需 can-utils + vcan 内核模块)
+cd canopen && mkdir -p build && cd build && cmake .. && make -j$(nproc)
+
+# SOME/IP          依赖: libvsomeip3-dev
+cd someip && mkdir -p build && cd build && cmake .. && make -j$(nproc)
+
+# DDS              依赖: cyclonedds-dev
+cd dds && mkdir -p build && cd build && cmake .. && make -j$(nproc)
+
+# ROS2             依赖: /opt/ros/humble/setup.bash
+cd ros2 && source /opt/ros/humble/setup.bash
+colcon build --packages-select topic_lab service_lab action_lab qos_lab \
+  lifecycle_lab composition_lab param_lab launch_lab tf2_lab rosbag2_lab \
+  loan_lab multimachine_lab dds_vendor_lab mqtt_lab dds_bridge
+
+# 共享内存         依赖: librt
+cd shm && mkdir -p build && cd build && cmake .. && make -j$(nproc)
+
+# ZeroMQ           依赖: libzmq3-dev, cppzmq
+cd zmq && mkdir -p build && cd build && cmake .. && make -j$(nproc)
+
+# GDBus            依赖: libglib2.0-dev, gdbus-codegen, python3
+cd gdbus && mkdir -p build && cd build && cmake .. && make -j$(nproc)
+
+# MQTT             依赖: libpaho-mqtt-dev, protobuf-c-compiler
+cd mqtt && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 ```
 
 ## 环境要求
 
 - CMake 3.10+
 - GCC/G++ (C11/C++17)
-- ROS2 Humble (`/opt/ros/humble/setup.bash`)
-- CycloneDDS (`cyclonedds-dev`)
-- 各子目录 README 中包含详细的依赖安装说明
+- ROS2 Humble (仅 `ros2/` 需要)
+- 各子目录 README 中包含详细依赖说明和运行命令
 
 ## 许可证
 
