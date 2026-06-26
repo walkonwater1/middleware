@@ -39,6 +39,8 @@ cmake .. && make -j$(nproc)
 | `instance_lab` | vehicle/instance_lab.c | **Instance 管理**: @key + dispose/unregister 生命周期 |
 | `security_lab` | vehicle/security_lab.c | **DDS Security**: 认证/授权/加密三层安全机制 |
 | `bench_lab` | vehicle/bench_lab.c | **性能 Benchmark**: 延迟 P50/P99 + 吞吐量 msg/s |
+| `robot_dds_service` | robot/robot_dds_service.c | **机器人服务端**: Listener 回调, Task→Status 状态机 |
+| `robot_dds_monitor` | robot/robot_dds_monitor.c | **机器人监控端**: 三 Topic Listener, dds_take 实时延迟 |
 
 ---
 
@@ -182,6 +184,37 @@ for (int i = 0; i < n; i++) {
 }
 if (n > 0) dds_return_loan(rd, samples, n);  // ★ 必须归还 loan
 ```
+
+---
+
+## 机器人系统 Demo
+
+完整的机器人中控实验，对标 EHR 项目状态机架构：
+
+**架构:**
+```
+robot_dds_service (服务端)
+  TaskCommand Topic ← Listener 回调 (dds_take, 事件模式)
+  RobotStatus  Topic → 定时发布 1Hz (状态同步)
+
+robot_dds_monitor (监控端)
+  RobotStatus  Topic ← Listener 回调 (dds_take, 实时)
+  TaskCommand  Topic ← Listener 回调
+  Heartbeat    Topic ← Listener 回调
+```
+
+**运行:**
+```bash
+bash scripts/run_robot_demo.sh    # 一键启动 service + monitor
+# 或手动:
+./robot_dds_service &
+./robot_dds_monitor &
+```
+
+**关键升级:**
+- 轮询→Listener: 延迟从 ~100ms 降至 ~微秒级
+- dds_read→dds_take: 避免重复读取历史数据 (延迟从 ~6000ms 降至 ~0.05ms)
+- 退出时打印延迟统计 (avg/max per topic)
 
 ## 主流 DDS 实现
 
