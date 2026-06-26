@@ -1,0 +1,11 @@
+# 第三方库 — 不计入语言统计
+mqtt/third-lib/** linguist-vendored
+
+# 自动生成的代码
+dds/build/** linguist-generated
+ros2/build/** linguist-generated
+ros2/install/** linguist-generated
+
+# 标记 D-Bus codegen 产物 (如果存在)
+**/robot-dbus.h linguist-generated
+**/robot-dbus.c linguist-generated
