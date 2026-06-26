@@ -1,0 +1,9 @@
+gdbus-demo-client
+gdbus-demo-service
+build/
+# 防止 DDS IDL 生成文件污染
+HelloWorld.c
+HelloWorld.h
+VehicleState.c
+VehicleState.h
+*.idl
