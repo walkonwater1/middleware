@@ -38,11 +38,11 @@ find_program(GDBUS_CODEGEN gdbus-codegen REQUIRED)
 find_program(PYTHON3 python3 REQUIRED)
 
 set(CODEGEN_DIR      "${CMAKE_CURRENT_BINARY_DIR}/generated")
-set(CODEGEN_C_H      "${CODEGEN_DIR}/vehicle-dbus.h")
-set(CODEGEN_C_C      "${CODEGEN_DIR}/vehicle-dbus.c")
-set(CODEGEN_CXX_H    "${CODEGEN_DIR}/vehicle_bindings.hpp")
-set(CODEGEN_CXX_C    "${CODEGEN_DIR}/vehicle_bindings.cpp")
-set(INTF_XML         "${CMAKE_CURRENT_SOURCE_DIR}/interfaces/com.example.Vehicle.xml")
+set(CODEGEN_C_H      "${CODEGEN_DIR}/robot-dbus.h")
+set(CODEGEN_C_C      "${CODEGEN_DIR}/robot-dbus.c")
+set(CODEGEN_CXX_H    "${CODEGEN_DIR}/robot_bindings.hpp")
+set(CODEGEN_CXX_C    "${CODEGEN_DIR}/robot_bindings.cpp")
+set(INTF_XML         "${CMAKE_CURRENT_SOURCE_DIR}/interfaces/com.example.Robot.xml")
 set(GEN_SCRIPT       "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_cpp_bindings.py")
 
 # Step 1: gdbus-codegen → C code
@@ -50,7 +50,7 @@ add_custom_command(
     OUTPUT  ${CODEGEN_C_H} ${CODEGEN_C_C}
     COMMAND ${CMAKE_COMMAND} -E make_directory ${CODEGEN_DIR}
     COMMAND ${GDBUS_CODEGEN}
-        --generate-c-code ${CODEGEN_DIR}/vehicle-dbus
+        --generate-c-code ${CODEGEN_DIR}/robot-dbus
         --c-namespace Demo
         --interface-prefix com.example.
         ${INTF_XML}
@@ -64,7 +64,7 @@ add_custom_command(
     COMMAND ${PYTHON3} ${GEN_SCRIPT} ${INTF_XML}
         --namespace Demo
         --interface-prefix com.example.
-        --c-header vehicle-dbus.h
+        --c-header robot-dbus.h
         --output-header ${CODEGEN_CXX_H}
         --output-impl ${CODEGEN_CXX_C}
     DEPENDS ${INTF_XML} ${GEN_SCRIPT}

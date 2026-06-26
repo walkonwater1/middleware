@@ -1,0 +1,97 @@
+<!--
+  D-Bus 接口定义文件 — com.example.Robot
+
+  使用 gdbus-codegen 根据此文件自动生成:
+    - DemoRobotSkeleton  (服务端骨架 — 继承它实现业务逻辑)
+    - DemoRobotProxy      (客户端代理 — 调用远程方法/监听信号)
+
+  增删改查方法/信号/属性只需修改此文件, 重新 cmake 即可。
+-->
+<node>
+  <interface name="com.example.Robot">
+
+    <!--
+      GetRobotStatus — 获取机器人完整状态
+      返回: robot_id(s), state(s), battery_level(d), cpu_temp(d)
+    -->
+    <method name="GetRobotStatus">
+      <arg type="s" name="robot_id"       direction="out"/>
+      <arg type="s" name="state"          direction="out"/>
+      <arg type="d" name="battery_level"  direction="out"/>
+      <arg type="d" name="cpu_temp"       direction="out"/>
+    </method>
+
+    <!--
+      ExecuteTask — 下发任务
+      参数:  task_type(s) 任务类型 (Navigation/Motion/VoiceInteraction/...)
+             task_name(s) 任务名称
+      返回:  task_id(s), success(b)
+    -->
+    <method name="ExecuteTask">
+      <arg type="s" name="task_type" direction="in"/>
+      <arg type="s" name="task_name" direction="in"/>
+      <arg type="s" name="task_id"   direction="out"/>
+      <arg type="b" name="success"   direction="out"/>
+    </method>
+
+    <!--
+      CancelTask — 取消任务
+      参数:  task_id(s)
+      返回:  success(b)
+    -->
+    <method name="CancelTask">
+      <arg type="s" name="task_id" direction="in"/>
+      <arg type="b" name="success" direction="out"/>
+    </method>
+
+    <!--
+      EmergencyStop — 紧急停止机器人
+      返回: success(b)
+    -->
+    <method name="EmergencyStop">
+      <arg type="b" name="success" direction="out"/>
+    </method>
+
+    <!--
+      StateChanged — 机器人状态变更信号
+      参数: old_state(s), new_state(s)
+    -->
+    <signal name="StateChanged">
+      <arg type="s" name="old_state"/>
+      <arg type="s" name="new_state"/>
+    </signal>
+
+    <!--
+      TaskProgress — 任务进度更新信号
+      参数: task_id(s), progress(d) 0-100, status(s)
+    -->
+    <signal name="TaskProgress">
+      <arg type="s" name="task_id"/>
+      <arg type="d" name="progress"/>
+      <arg type="s" name="status"/>
+    </signal>
+
+    <!--
+      BatteryLow — 低电量告警信号
+      参数: level(d) 当前电量百分比
+    -->
+    <signal name="BatteryLow">
+      <arg type="d" name="level"/>
+    </signal>
+
+    <!-- Properties: 只读, 缓存于 GDBusProxy -->
+
+    <!-- State — 当前机器人状态 -->
+    <property name="State" type="s" access="read"/>
+
+    <!-- BatteryLevel — 电量 0.0-100.0 -->
+    <property name="BatteryLevel" type="d" access="read"/>
+
+    <!-- Emotion — 当前表情 -->
+    <property name="Emotion" type="s" access="read"/>
+
+    <!-- CpuTemp — CPU 温度 -->
+    <property name="CpuTemp" type="d" access="read"/>
+
+  </interface>
+</node>

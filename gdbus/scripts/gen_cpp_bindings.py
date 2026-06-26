@@ -3,17 +3,17 @@
 gen_cpp_bindings.py — 从 D-Bus 接口 XML 自动生成 C++17 包装类
 
 用法:
-    python3 scripts/gen_cpp_bindings.py interfaces/com.example.Vehicle.xml \\
-        --namespace Demo --c-header vehicle-dbus.h \\
-        --output-header generated/vehicle_bindings.hpp \\
-        --output-impl generated/vehicle_bindings.cpp
+    python3 scripts/gen_cpp_bindings.py interfaces/com.example.Robot.xml \\
+        --namespace Demo --c-header robot-dbus.h \\
+        --output-header generated/robot_bindings.hpp \\
+        --output-impl generated/robot_bindings.cpp
 
 当 XML 中增删改查方法/信号/属性时, 重新 cmake 即可自动更新 C++ 包装,
 无需手动修改任何 C++ 代码。
 
 类名约定:
-  C typedef:  DemoVehicleSkeleton / DemoVehicleProxy  (来自 gdbus-codegen)
-  C++ class:  DemoVehicleServer   / DemoVehicleClient  (避免与 C typedef 冲突)
+  C typedef:  DemoRobotSkeleton / DemoRobotProxy  (来自 gdbus-codegen)
+  C++ class:  DemoRobotServer   / DemoRobotClient  (避免与 C typedef 冲突)
 """
 
 import argparse
@@ -343,6 +343,8 @@ def generate_header(xml_path: str, namespace: str, intf_prefix: str,
             done_cb = 'std::function<void()>'
         L(f'{IND}/// {m["name"]}() async')
         L(f'{IND}void {sn}_async(')
+        for a in m['in_args']:
+            L(f'{IND}    {cxx_type(a["type"])} {a["name"]},')
         L(f'{IND}    {done_cb} on_done,')
         L(f'{IND}    std::function<void(const std::string&)> on_error = nullptr);')
         L('')
@@ -467,7 +469,12 @@ def generate_impl(xml_path: str, namespace: str, intf_prefix: str,
         L(f'{IND}// {m["name"]} handler')
         L(f'{IND}struct {handler_cb_name}_t {{')
         L(f'{IND}{IND}{m["name"]}Handler fn;')
-        L(f'{IND}{IND}static gboolean tramp({type_name}* obj, GDBusMethodInvocation* inv, gpointer d) {{')
+        # Build trampoline signature with input args
+        tramp_params = f'{type_name}* obj, GDBusMethodInvocation* inv'
+        for a in m['in_args']:
+            tramp_params += f', {c_type(a["type"])} arg_{a["name"]}'
+        tramp_params += ', gpointer d'
+        L(f'{IND}{IND}static gboolean tramp({tramp_params}) {{')
         L(f'{IND}{IND}{IND}auto* self = static_cast<{handler_cb_name}_t*>(d);')
         L(f'{IND}{IND}{IND}if (!self->fn) {{')
         L(f'{IND}{IND}{IND}{IND}g_dbus_method_invocation_return_error(inv, G_DBUS_ERROR, G_DBUS_ERROR_FAILED,')
@@ -476,10 +483,15 @@ def generate_impl(xml_path: str, namespace: str, intf_prefix: str,
         L(f'{IND}{IND}{IND}}}')
         L('')
 
-        # Call handler
+        # Call handler with parsed input args
         if m['in_args']:
-            L(f'{IND}{IND}{IND}// TODO: parse input args from method invocation parameters')
-            L(f'{IND}{IND}{IND}auto result = self->fn(/* TODO: in_args */);')
+            call_args = []
+            for a in m['in_args']:
+                if a['type'] == 's':
+                    call_args.append(f'arg_{a["name"]} ? arg_{a["name"]} : ""')
+                else:
+                    call_args.append(f'arg_{a["name"]}')
+            L(f'{IND}{IND}{IND}auto result = self->fn({", ".join(call_args)});')
         else:
             L(f'{IND}{IND}{IND}auto result = self->fn();')
 
@@ -490,6 +502,8 @@ def generate_impl(xml_path: str, namespace: str, intf_prefix: str,
             for a in m['out_args']:
                 if a['type'] == 's':
                     getter_params.append(f'result.{a["name"]}.c_str()')
+                elif a['type'] == 'b':
+                    getter_params.append(f'static_cast<gboolean>(result.{a["name"]})')
                 else:
                     getter_params.append(f'result.{a["name"]}')
             L(f'{IND}{IND}{IND}{complete_func}(obj, inv, {", ".join(getter_params)});')
@@ -539,7 +553,12 @@ def generate_impl(xml_path: str, namespace: str, intf_prefix: str,
         L(f'{IND}}}')
         L(f'{IND}struct {handler_cb_name}_t {{')
         L(f'{IND}{IND}{m["name"]}Handler fn;')
-        L(f'{IND}{IND}static gboolean tramp({type_name}* obj, GDBusMethodInvocation* inv, gpointer d) {{')
+        # Build trampoline signature with input args
+        tramp_params2 = f'{type_name}* obj, GDBusMethodInvocation* inv'
+        for a in m['in_args']:
+            tramp_params2 += f', {c_type(a["type"])} arg_{a["name"]}'
+        tramp_params2 += ', gpointer d'
+        L(f'{IND}{IND}static gboolean tramp({tramp_params2}) {{')
         L(f'{IND}{IND}{IND}auto* self = static_cast<{handler_cb_name}_t*>(d);')
         L(f'{IND}{IND}{IND}if (!self->fn) {{')
         L(f'{IND}{IND}{IND}{IND}g_dbus_method_invocation_return_error(inv, G_DBUS_ERROR, G_DBUS_ERROR_FAILED,')
@@ -547,7 +566,13 @@ def generate_impl(xml_path: str, namespace: str, intf_prefix: str,
         L(f'{IND}{IND}{IND}{IND}return TRUE;')
         L(f'{IND}{IND}{IND}}}')
         if m['in_args']:
-            L(f'{IND}{IND}{IND}auto result = self->fn(/* TODO */);')
+            call_args2 = []
+            for a in m['in_args']:
+                if a['type'] == 's':
+                    call_args2.append(f'arg_{a["name"]} ? arg_{a["name"]} : ""')
+                else:
+                    call_args2.append(f'arg_{a["name"]}')
+            L(f'{IND}{IND}{IND}auto result = self->fn({", ".join(call_args2)});')
         else:
             L(f'{IND}{IND}{IND}auto result = self->fn();')
         L('')
@@ -556,6 +581,8 @@ def generate_impl(xml_path: str, namespace: str, intf_prefix: str,
             for a in m['out_args']:
                 if a['type'] == 's':
                     getter_params.append(f'result.{a["name"]}.c_str()')
+                elif a['type'] == 'b':
+                    getter_params.append(f'static_cast<gboolean>(result.{a["name"]})')
                 else:
                     getter_params.append(f'result.{a["name"]}')
             L(f'{IND}{IND}{IND}{complete_func}(obj, inv, {", ".join(getter_params)});')
@@ -577,7 +604,13 @@ def generate_impl(xml_path: str, namespace: str, intf_prefix: str,
         sn = camel_to_snake(s['name'])
         emit_fn = emit_func(ns_lower, type_lower, s['name'])
         params = ', '.join(f'{cxx_type(a["type"])} {a["name"]}' for a in s['args'])
-        call_params = ', '.join(a['name'] for a in s['args'])
+        call_params_list = []
+        for a in s['args']:
+            if a['type'] == 's':
+                call_params_list.append(f'{a["name"]}.c_str()')
+            else:
+                call_params_list.append(a['name'])
+        call_params = ', '.join(call_params_list)
         L(f'void {server_class}::emit_{sn}({params}) {{')
         L(f'{IND}{emit_fn}(skel_, {call_params});')
         L(f'}}')
@@ -650,6 +683,8 @@ def generate_impl(xml_path: str, namespace: str, intf_prefix: str,
             result_type = 'void'
 
         L(f'void {client_class}::{sn}_async(')
+        for a in m['in_args']:
+            L(f'{IND}{cxx_type(a["type"])} {a["name"]},')
         if m['out_args']:
             L(f'{IND}std::function<void(const {result_type}&)> on_done,')
         else:
@@ -657,7 +692,10 @@ def generate_impl(xml_path: str, namespace: str, intf_prefix: str,
         L(f'{IND}std::function<void(const std::string&)> on_error) {{')
         L('')
         L(f'{IND}struct Ctx {{')
-        L(f'{IND}{IND}{type_name}* proxy;  // for finish_fn (needs DemoVehicle*, not GObject*)')
+        L(f'{IND}{IND}{type_name}* proxy;  // for finish_fn (needs {type_name}*, not GObject*)')
+        # Store input args for passing to proxy call
+        for a in m['in_args']:
+            L(f'{IND}{IND}{cxx_type(a["type"])} _{a["name"]};')
         if m['out_args']:
             L(f'{IND}{IND}std::function<void(const {result_type}&)> done;')
         else:
@@ -697,6 +735,8 @@ def generate_impl(xml_path: str, namespace: str, intf_prefix: str,
             for a in m['out_args']:
                 if a['type'] == 's':
                     result_fields.append(f'std::string(_{a["name"]} ? _{a["name"]} : "")')
+                elif a['type'] == 'b':
+                    result_fields.append(f'static_cast<bool>(_{a["name"]})')
                 else:
                     result_fields.append(f'_{a["name"]}')
             L(f'{IND}{IND}{IND}{IND}ctx->done({result_type}{{{", ".join(result_fields)}}});')
@@ -710,8 +750,21 @@ def generate_impl(xml_path: str, namespace: str, intf_prefix: str,
         L(f'{IND}{IND}{IND}delete ctx;')
         L(f'{IND}{IND}}}')
         L(f'{IND}}};')
-        L(f'{IND}auto* ctx = new Ctx{{proxy_, std::move(on_done), std::move(on_error)}};')
-        L(f'{IND}{call_fn}(proxy_, nullptr, Ctx::callback, ctx);')
+        # Build Ctx initialization
+        ctx_init_fields = ['proxy_']
+        for a in m['in_args']:
+            ctx_init_fields.append(f'std::move({a["name"]})')
+        ctx_init_fields.extend(['std::move(on_done)', 'std::move(on_error)'])
+        L(f'{IND}auto* ctx = new Ctx{{{", ".join(ctx_init_fields)}}};')
+        # Build proxy call args: proxy_, in_args..., nullptr, callback, ctx
+        call_args_list = ['proxy_']
+        for a in m['in_args']:
+            if a['type'] == 's':
+                call_args_list.append(f'ctx->_{a["name"]}.c_str()')
+            else:
+                call_args_list.append(f'ctx->_{a["name"]}')
+        call_args_list.extend(['nullptr', 'Ctx::callback', 'ctx'])
+        L(f'{IND}{call_fn}({", ".join(call_args_list)});')
         L(f'}}')
         L('')
 

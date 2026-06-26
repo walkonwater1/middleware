@@ -1,12 +1,19 @@
 /**
- * demo_client.cpp — GDBus C++17 车辆信息客户端入口
+ * demo_client.cpp — GDBus C++17 机器人监控客户端入口
+ *
+ * 模拟机器人远程监控终端：
+ *   - 查询机器人状态 (GetRobotStatus)
+ *   - 订阅状态变更/任务进度信号
+ *   - 远程下发任务 (ExecuteTask / CancelTask)
+ *   - 轮询属性 (State / BatteryLevel / Emotion / CpuTemp)
+ *   - 紧急停止 (EmergencyStop)
  *
  * 所有 D-Bus 调用由 gdbus-codegen + gen_cpp_bindings.py 自动生成。
  * 修改 XML 后重新 cmake 即可获取最新接口。
  */
 
 #include "gdbus_cxx.hpp"
-#include "vehicle_bindings.hpp"   // ★ 自动生成
+#include "robot_bindings.hpp"   // ★ 自动生成
 
 #include <clocale>
 #include <csignal>
@@ -31,12 +38,15 @@ int main() {
     gdbus_cxx::MainLoop loop;
     g_loop = &loop;
 
-    g_print("=== GDBus C++17 车辆信息客户端 ===\n\n");
+    g_print("╔══════════════════════════════════════════╗\n");
+    g_print("║   机器人远程监控终端 (GDBus C++17)      ║\n");
+    g_print("╚══════════════════════════════════════════╝\n\n");
 
     // 持久化上下文 — proxy 生命周期与 main() 一致
     struct AppCtx {
         gdbus_cxx::MainLoop* loop;
-        std::unique_ptr<DemoVehicleClient> proxy;
+        std::unique_ptr<DemoRobotClient> proxy;
+        int tick = 0;
     };
 
     struct ConnCtx {
@@ -44,8 +54,7 @@ int main() {
         AppCtx* app;
     };
 
-    AppCtx app{&loop, nullptr};
-    g_loop = &loop;
+    AppCtx app{&loop, nullptr, 0};
 
     auto* conn_ctx = new ConnCtx{&loop, &app};
     g_dbus_connection_new_for_address(
@@ -68,8 +77,9 @@ int main() {
 
             g_print("[CLIENT] D-Bus 连接成功\n");
 
-            // ★ 自动生成的代理 — 所有权转移给 app，生命周期与 main() 一致
-            ctx->app->proxy = DemoVehicleClient::create_sync(conn);
+            // 创建 Robot 代理
+            ctx->app->proxy = DemoRobotClient::create_sync(conn,
+                "com.example.RobotService", "/com/example/Robot");
             if (!ctx->app->proxy) {
                 g_print("[CLIENT] 无法创建代理 (服务启动了?)\n");
                 ctx->loop->quit();
@@ -79,32 +89,118 @@ int main() {
 
             auto* proxy = ctx->app->proxy.get();
 
-            // 1. 订阅 SpeedChanged 信号
-            proxy->on_speed_changed([](double s) {
-                g_print("[CLIENT] <<< SpeedChanged: %.1f km/h\n", s);
+            // ──────────────────────────────────────────────
+            // 1. 订阅信号
+            // ──────────────────────────────────────────────
+
+            // StateChanged — 对应 RobotStateManager 状态转移
+            proxy->on_state_changed([](const std::string& old_state,
+                                        const std::string& new_state) {
+                g_print("[CLIENT] <<< StateChanged: %s → %s\n",
+                        old_state.c_str(), new_state.c_str());
             });
 
-            // 2. 调用 GetVehicleInfo 方法
-            proxy->get_vehicle_info_async(
-                [](const DemoVehicleClient::GetVehicleInfoResult& info) {
-                    const auto& [vehicle_id, speed, odo] = info;  // C++17 结构化绑定
-                    g_print("[CLIENT] GetVehicleInfo:\n");
-                    g_print("  Vehicle ID: %s\n", vehicle_id.c_str());
-                    g_print("  Speed:      %.1f km/h\n", speed);
-                    g_print("  Odometer:   %.1f km\n", odo);
+            // TaskProgress — 对应 TaskExecutor 任务进度回调
+            proxy->on_task_progress([](const std::string& task_id,
+                                        double progress,
+                                        const std::string& status) {
+                g_print("[CLIENT] <<< TaskProgress: %s %.0f%% (%s)\n",
+                        task_id.c_str(), progress, status.c_str());
+            });
+
+            // BatteryLow — 低电量告警
+            proxy->on_battery_low([](double level) {
+                g_print("[CLIENT] <<< ⚠ BatteryLow: %.1f%% 剩余!\n", level);
+            });
+
+            // ──────────────────────────────────────────────
+            // 2. 查询机器人状态 (同步方法)
+            // ──────────────────────────────────────────────
+            proxy->get_robot_status_async(
+                [](const DemoRobotClient::GetRobotStatusResult& info) {
+                    const auto& [robot_id, state, battery, cpu_temp] = info;
+                    g_print("\n[CLIENT] === 机器人状态 ===\n");
+                    g_print("  Robot ID:    %s\n", robot_id.c_str());
+                    g_print("  State:       %s\n", state.c_str());
+                    g_print("  Battery:     %.1f%%\n", battery);
+                    g_print("  CPU Temp:    %.1f°C\n", cpu_temp);
+                    g_print("========================\n\n");
                 },
                 [](const std::string& err) {
-                    g_print("[CLIENT] 调用失败: %s\n", err.c_str());
+                    g_print("[CLIENT] GetRobotStatus 失败: %s\n", err.c_str());
                 });
 
-            // 3. 每5秒读取 Speed 属性 (缓存值, 同步快速)
-            gdbus_cxx::timeout_add_seconds(5, [proxy]() -> gboolean {
-                double s = proxy->get_speed();
-                g_print("[CLIENT] Speed 属性 = %.1f km/h\n", s);
+            // ──────────────────────────────────────────────
+            // 3. 下发任务 (对应 TaskOrchestrator::StartTask)
+            // ──────────────────────────────────────────────
+            g_print("[CLIENT] 下发测试任务...\n");
+
+            // Navigation 任务
+            proxy->execute_task_async("Navigation", "前往充电桩",
+                [](const DemoRobotClient::ExecuteTaskResult& r) {
+                    if (r.success) {
+                        g_print("[CLIENT] >>> ExecuteTask: Navigation → %s\n",
+                                r.task_id.c_str());
+                    }
+                },
+                [](const std::string& err) {
+                    g_print("[CLIENT] ExecuteTask 失败: %s\n", err.c_str());
+                });
+
+            // Motion 任务
+            proxy->execute_task_async("Motion", "挥手致意",
+                [](const DemoRobotClient::ExecuteTaskResult& r) {
+                    if (r.success) {
+                        g_print("[CLIENT] >>> ExecuteTask: Motion → %s\n",
+                                r.task_id.c_str());
+                    }
+                },
+                [](const std::string& err) {
+                    g_print("[CLIENT] ExecuteTask 失败: %s\n", err.c_str());
+                });
+
+            // VoiceInteraction 任务
+            proxy->execute_task_async("VoiceInteraction", "问答对话",
+                [](const DemoRobotClient::ExecuteTaskResult& r) {
+                    if (r.success) {
+                        g_print("[CLIENT] >>> ExecuteTask: VoiceInteraction → %s\n",
+                                r.task_id.c_str());
+                    }
+                },
+                [](const std::string& err) {
+                    g_print("[CLIENT] ExecuteTask 失败: %s\n", err.c_str());
+                });
+
+            // ──────────────────────────────────────────────
+            // 4. 定期轮询属性 (同步, 使用 GDBusProxy 缓存)
+            // ──────────────────────────────────────────────
+            // NOTE: 直接捕获 app/loop 的栈指针, 不依赖 conn_ctx
+            // (conn_ctx 在下面被 delete, 不能从 timer 中引用)
+            auto* timer_app = ctx->app;
+            auto* timer_loop = ctx->loop;
+            gdbus_cxx::timeout_add_seconds(3, [proxy, timer_app, timer_loop]() -> gboolean {
+                timer_app->tick++;
+                std::string state = proxy->get_state();
+                double battery = proxy->get_battery_level();
+                double cpu_temp = proxy->get_cpu_temp();
+                std::string emotion = proxy->get_emotion();
+
+                g_print("[CLIENT] [轮询#%d] 状态=%s 电量=%.1f%% CPU=%.1f°C 表情=%s\n",
+                        timer_app->tick, state.c_str(), battery, cpu_temp,
+                        emotion.c_str());
+
+                // 运行 ~24 秒后退出
+                if (timer_app->tick >= 8) {
+                    g_print("\n[CLIENT] 演示完成, 退出.\n");
+                    timer_loop->quit();
+                    return G_SOURCE_REMOVE;
+                }
+
                 return G_SOURCE_CONTINUE;
             });
 
-            g_print("[CLIENT] 已就绪, 按 Ctrl+C 退出\n\n");
+            g_print("[CLIENT] 已就绪, 按 Ctrl+C 退出\n");
+            // conn_ctx 使命完成 — timer 只依赖 &app 和 &loop (均在 main() 栈上)
             delete ctx;
         }, conn_ctx);
 
