@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <package format="3">
-  <name>custom_msg</name>
+  <name>topic_lab</name>
   <version>0.1.0</version>
-  <description>ROS2 自定义消息 Demo — 对应 DDS VehicleState IDL</description>
+  <description>ROS2 Topic 实验 — 基础String + 自定义VehicleState消息</description>
   <maintainer email="user@example.com">lixin</maintainer>
   <license>Apache-2.0</license>
 
@@ -15,7 +15,5 @@
   <exec_depend>rosidl_default_runtime</exec_depend>
   <member_of_group>rosidl_interface_packages</member_of_group>
 
-  <export>
-    <build_type>ament_cmake</build_type>
-  </export>
+  <export><build_type>ament_cmake</build_type></export>
 </package>

@@ -12,7 +12,7 @@
 #include <memory>
 
 #include "rclcpp/rclcpp.hpp"
-#include "custom_msg/msg/vehicle_state.hpp"
+#include "topic_lab/msg/vehicle_state.hpp"
 
 using std::placeholders::_1;
 
@@ -24,7 +24,7 @@ public:
     {
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
 
-        subscription_ = this->create_subscription<custom_msg::msg::VehicleState>(
+        subscription_ = this->create_subscription<topic_lab::msg::VehicleState>(
             "/vehicle/state", qos,
             std::bind(&VehicleSubscriber::topic_callback, this, _1));
 
@@ -35,7 +35,7 @@ public:
     }
 
 private:
-    void topic_callback(const custom_msg::msg::VehicleState::SharedPtr msg)
+    void topic_callback(const topic_lab::msg::VehicleState::SharedPtr msg)
     {
         count_++;
 
@@ -55,7 +55,7 @@ private:
         }
     }
 
-    rclcpp::Subscription<custom_msg::msg::VehicleState>::SharedPtr subscription_;
+    rclcpp::Subscription<topic_lab::msg::VehicleState>::SharedPtr subscription_;
     int count_;
 };
 

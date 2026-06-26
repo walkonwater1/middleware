@@ -14,7 +14,7 @@
 #include <memory>
 
 #include "rclcpp/rclcpp.hpp"
-#include "custom_msg/msg/vehicle_state.hpp"
+#include "topic_lab/msg/vehicle_state.hpp"
 
 using namespace std::chrono_literals;
 
@@ -27,7 +27,7 @@ public:
         /* QoS: 对应 DDS Reliable + KeepLast(10) */
         auto qos = rclcpp::QoS(rclcpp::KeepLast(10)).reliable();
 
-        publisher_ = this->create_publisher<custom_msg::msg::VehicleState>(
+        publisher_ = this->create_publisher<topic_lab::msg::VehicleState>(
             "/vehicle/state", qos);
 
         /* Timer 替代 DDS 的 sleep(1) + 循环 */
@@ -43,7 +43,7 @@ public:
 private:
     void timer_callback()
     {
-        auto msg = custom_msg::msg::VehicleState();
+        auto msg = topic_lab::msg::VehicleState();
 
         /* 模拟数据 (与 DDS publisher.c 相同的逻辑) */
         msg.vehicle_id = "ros2-car-" + std::to_string(count_ % 100);
@@ -63,7 +63,7 @@ private:
             count_, msg.vehicle_id.c_str(), msg.speed, msg.battery_soc);
     }
 
-    rclcpp::Publisher<custom_msg::msg::VehicleState>::SharedPtr publisher_;
+    rclcpp::Publisher<topic_lab::msg::VehicleState>::SharedPtr publisher_;
     rclcpp::TimerBase::SharedPtr timer_;
     int count_;
 };

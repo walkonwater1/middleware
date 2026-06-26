@@ -2,6 +2,49 @@
 
 ROS2 (Robot Operating System 2) 是机器人领域的标准中间件，底层基于 DDS 实现，提供发布/订阅、服务调用、Action 等通信模式。
 
+---
+
+## ROS1 → ROS2 → 定制中间件 演进对比
+
+### 为什么会有 ROS2 ?
+
+| 维度 | ROS1 | ROS2 |
+|------|------|------|
+| **通信层** | 自研 TCPROS (基于 TCP) | 标准 DDS (基于 UDP 组播) |
+| **拓扑结构** | 中心化 Master (单点故障) | 去中心化 P2P (无 Master) |
+| **发现机制** | ROS Master 集中注册 | DDS SPDP/SEDP 自动发现 |
+| **QoS** | 不支持 (尽最大努力) | 完善 QoS 策略 (Reliable/BestEffort/TransientLocal 等) |
+| **实时性** | 毫秒级, 无确定性 | 微秒级, 可配置 Deadline/Liveliness |
+| **安全性** | 无加密/认证 | DDS Security (TLS + ACL) |
+| **跨平台** | 仅 Linux | Linux / Windows / macOS / QNX / VxWorks |
+| **消息序列化** | 自定义格式 | CDR/XCDR 标准编码 |
+| **多机通信** | 需手动配置 ROS_MASTER_URI | 同一 DDS Domain 自动发现 |
+| **定位** | 学术/原型开发 | 产品级 / 可量产 |
+
+**核心结论**: ROS1 是科研性质的工具（Master 挂掉整个系统瘫痪、无法选择可靠性级别、不支持真时实系统），ROS2 通过引入 DDS 解决了这些问题，使得 ROS 生态可以支撑量产项目。
+
+---
+
+### 大厂为什么仍自研中间件？
+
+尽管 ROS2 已经成熟，但在汽车/工业控制领域，一线大厂仍投入大量资源自研中间件。原因如下：
+
+| 需求 | ROS2 的限制 | 自研中间件的做法 |
+|------|------------|----------------|
+| **硬实时 (<1ms 确定性)** | DDS 依赖 UDP 和系统调度, 难以保证 μs 级确定性 | 共享内存 + 时间触发调度 + 中断级别精确控制 |
+| **MCU 资源 (RAM <2MB)** | ROS2/DDS 栈需要 100MB+ RAM, 只能在 MPU 上运行 | 裁剪协议栈, 静态内存分配, 可在 Cortex-M 上运行 |
+| **ISO 26262 ASIL 认证** | DDS 实现未经过功能安全认证 | 全链路按照 ASIL-B/D 开发, 每条代码可追溯 |
+| **AUTOSAR 兼容** | ROS2 不是 AUTOSAR 标准组件 | 实现 AUTOSAR AP ara::com 接口, 与车辆其他 ECU 互通 |
+| **数据主权** | 核心通信能力依赖第三方开源项目 | 完全自主可控, 不受开源维护者变更影响 |
+| **确定性调度** | 无法精确控制消息的发送时刻和顺序 | 时间感知调度 (Time-Aware Scheduling), TSN 集成 |
+
+**典型自研案例**:
+- **Apex.OS / Apex.Middleware**: 基于 ROS2 接口但重写底层, 通过 ISO 26262 ASIL-D 认证
+- **Fusa**: 功能安全相关的中间件层, 独立于 ROS2
+- **车载 SOA (Some/IP + DDS)**: 自适应 AUTOSAR 平台上同时运行 Some/IP 和 DDS, 针对不同域使用不同协议
+
+---
+
 ## ROS2 核心概念
 
 | 概念 | 说明 |

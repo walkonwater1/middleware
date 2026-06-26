@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.8)
+project(param_lab)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+add_executable(param_demo src/param_demo.cpp)
+ament_target_dependencies(param_demo rclcpp std_msgs)
+install(TARGETS param_demo DESTINATION lib/${PROJECT_NAME})
+ament_package()

@@ -1,0 +1,8 @@
+cmake_minimum_required(VERSION 3.8)
+project(composition_lab)
+find_package(rclcpp REQUIRED)
+find_package(std_msgs REQUIRED)
+add_executable(composition_demo src/composition_demo.cpp)
+ament_target_dependencies(composition_demo rclcpp std_msgs)
+install(TARGETS composition_demo DESTINATION lib/${PROJECT_NAME})
+ament_package()
