@@ -1,0 +1,27 @@
+<?xml version="1.0"?>
+<?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
+<package format="3">
+  <name>dds_bridge</name>
+  <version>1.0.0</version>
+  <description>
+    双工桥接节点: DDS VehicleState ↔ ROS2 /vehicle/state
+    演示 ROS2 底层即 DDS, 原生 DDS 发布的数据可被 ROS2 节点直接消费,
+    反之亦然。跨语言、跨进程、零序列化开销。
+  </description>
+  <maintainer email="user@example.com">lixin</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <build_depend>rosidl_default_generators</build_depend>
+  <exec_depend>rosidl_default_runtime</exec_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+
+  <member_of_group>rosidl_interface_packages</member_of_group>
+
+  <export>
+    <build_type>ament_cmake</build_type>
+  </export>
+</package>

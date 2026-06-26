@@ -25,11 +25,12 @@ show_menu() {
     echo "║ 12) multimachine 多机分布式通信          ║"
     echo "║ 13) dds_vendor DDS 供应商切换            ║"
     echo "║ 14) mqtt       MQTT 桥接                 ║"
-    echo "║ 15) build      编译全部包                ║"
+    echo "║ 15) dds_bridge DDS↔ROS2 桥接             ║"
+    echo "║ 16) build      编译全部包                ║"
     echo "║  q) 退出                                ║"
     echo "╚══════════════════════════════════════════╝"
     echo ""
-    read -r -p "输入 [1-15/q]: " c
+    read -r -p "输入 [1-16/q]: " c
     case "$c" in
         1) echo "--- 基础 Topic ---"; ros2 run topic_lab basic_pub & sleep 1; ros2 run topic_lab basic_sub; pkill basic_pub ;;
         2) echo "--- Service ---"; ros2 run service_lab battery_server & sleep 1; timeout 10 ros2 run service_lab battery_client; pkill battery_server ;;
@@ -45,7 +46,8 @@ show_menu() {
         12) echo "--- Multi-Machine ---"; ros2 run multimachine_lab discovery_subscriber --ros-args -p domain_id:=0 & sleep 1; timeout 8 ros2 run multimachine_lab discovery_publisher --ros-args -p domain_id:=0; pkill discovery_subscriber ;;
         13) echo "--- DDS Vendor ---"; timeout 8 ros2 run dds_vendor_lab vendor_test_node --ros-args -p mode:=pub ;;
         14) echo "--- MQTT ---"; timeout 10 ros2 run mqtt_lab ros2_mqtt_bridge ;;
-        15) echo "--- Build All ---"; cd "$WS"; colcon build --packages-select topic_lab service_lab action_lab qos_lab lifecycle_lab composition_lab param_lab launch_lab tf2_lab rosbag2_lab loan_lab multimachine_lab dds_vendor_lab mqtt_lab ;;
+        15) echo "--- DDS Bridge ---"; ros2 run dds_bridge dds_ros2_bridge ;;
+        16) echo "--- Build All ---"; cd "$WS"; colcon build --packages-select topic_lab service_lab action_lab qos_lab lifecycle_lab composition_lab param_lab launch_lab tf2_lab rosbag2_lab loan_lab multimachine_lab dds_vendor_lab mqtt_lab dds_bridge ;;
         q) exit 0 ;;
     esac
 }

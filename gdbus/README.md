@@ -68,9 +68,9 @@ cmake .. && make -j$(nproc)
 
 # 运行 (需要 dbus-run-session)
 dbus-run-session -- bash -c '
-./gdbus-demo-service &
+./demo_service &
 sleep 2
-timeout 35 ./gdbus-demo-client
+timeout 35 ./demo_client
 kill %1 2>/dev/null
 '
 ```
