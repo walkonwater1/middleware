@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <signal.h>
 #include <unistd.h>
 #include <time.h>
@@ -85,12 +86,13 @@ int main(void)
 
     /* 5. 接收循环 */
     const char *status_names[] = {"STOPPED", "RUNNING", "CHARGING", "ERROR"};
-    vehicle_VehicleState samples[4];  /* 批量读取 buffer */
     int count = 0;
 
     while (running) {
-        /* 批量读取 (最多4条, 超时1秒) */
+        /* 批量读取 (CycloneDDS 0.8.x loan API) */
+        void* samples[4] = {0};
         dds_sample_info_t infos[4];
+        memset(infos, 0, sizeof(infos));
         rc = dds_read(reader, samples, infos, 4, 4);
 
         if (rc > 0) {
@@ -98,7 +100,7 @@ int main(void)
                 if (!infos[i].valid_data) continue;
 
                 count++;
-                vehicle_VehicleState *msg = &samples[i];
+                vehicle_VehicleState *msg = samples[i];
 
                 /* 计算延迟 */
                 struct timespec ts;
@@ -119,7 +121,7 @@ int main(void)
                        latency_ms);
 
                 /* 告警检测 */
-                if (msg->status == vehicle_VehicleState_ERROR) {
+                if (msg->status == vehicle_ERROR) {
                     printf("[SUB] ⚠ 告警: 车辆 %s 状态异常!\n",
                            msg->vehicle_id);
                 }
@@ -128,6 +130,7 @@ int main(void)
                            msg->battery_soc);
                 }
             }
+            dds_return_loan(reader, samples, rc);
         } else if (rc == DDS_RETCODE_TIMEOUT) {
             /* 超时, 无新数据，继续等待 */
         } else if (rc < 0) {

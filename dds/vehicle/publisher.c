@@ -106,13 +106,13 @@ int main(void)
         /* 模拟状态变化: 起步加速 → 巡航 → 故障停车 */
         if (seq <= 5) {
             sample.speed = seq * 10.0;
-            sample.status = vehicle_VehicleState_RUNNING;
+            sample.status = vehicle_RUNNING;
         } else if (seq <= 15) {
             sample.speed = 60.0 + ((rand() % 1000) - 500) / 100.0;
-            sample.status = vehicle_VehicleState_RUNNING;
+            sample.status = vehicle_RUNNING;
         } else {
             sample.speed = 0.0;
-            sample.status = vehicle_VehicleState_ERROR;
+            sample.status = vehicle_ERROR;
         }
 
         /* 模拟位置 */
