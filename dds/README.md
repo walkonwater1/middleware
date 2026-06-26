@@ -35,6 +35,10 @@ cmake .. && make -j$(nproc)
 | `discovery_lab` | vehicle/discovery_lab.c | **自动发现**: 3 个进程零配置通信 |
 | `listener_lab` | vehicle/listener_lab.c | **Listener 回调**: Push 模式 (ROS2 spin 的底层) |
 | `partition_lab` | vehicle/partition_lab.c | **Partition 隔离**: 同 Domain 内逻辑分区 |
+| `content_filter_lab` | vehicle/content_filter_lab.c | **Content Filter**: Topic 级过滤, 只收符合条件的数据 |
+| `instance_lab` | vehicle/instance_lab.c | **Instance 管理**: @key + dispose/unregister 生命周期 |
+| `security_lab` | vehicle/security_lab.c | **DDS Security**: 认证/授权/加密三层安全机制 |
+| `bench_lab` | vehicle/bench_lab.c | **性能 Benchmark**: 延迟 P50/P99 + 吞吐量 msg/s |
 
 ---
 
@@ -147,7 +151,7 @@ ROS2 Node (rclcpp)
 - [x] 多节点自动发现
 - [x] Listener 回调模式
 - [x] Partition 隔离
-- [ ] Content Filter 数据过滤
-- [ ] DDS Security 认证加密
-- [ ] Key 字段 + Instance 管理
-- [ ] 延迟/吞吐量 benchmark
+- [x] Content Filter 数据过滤
+- [x] DDS Security 认证加密
+- [x] Key 字段 + Instance 管理
+- [x] 延迟/吞吐量 benchmark

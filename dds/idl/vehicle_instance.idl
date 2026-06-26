@@ -1,0 +1,22 @@
+/**
+ * DDS IDL 定义 — 带 @key 的车辆状态
+ *
+ * @key 将 vehicle_id 标记为实例唯一标识:
+ *   - 每个不同的 vehicle_id 创建独立的 Instance
+ *   - 每个 Instance 有独立生命周期: ALIVE → DISPOSED → NO_WRITERS
+ *   - dispose 操作通知所有订阅者该实例已销毁
+ *
+ * 编译: idlc -l c vehicle_instance.idl
+ */
+module vehicle_instance
+{
+    struct VehicleState
+    {
+        @key string<32> vehicle_id;   // ★ 实例 Key
+        double speed;
+        double latitude;
+        double longitude;
+        double battery_soc;
+        long long timestamp;
+    };
+};
