@@ -1,31 +1,20 @@
 cmake_minimum_required(VERSION 3.10)
 project(gdbus_demo LANGUAGES CXX C)
 
-# C++17 required for structured bindings, string_view, optional, etc.
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ============================================================
-# CMake 模块路径 (供 toolchain 交叉编译使用)
-# ============================================================
-list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-
-# ============================================================
 # 查找 GLib/GIO
-#   1. third-lib/glib/ 优先 (交叉编译静态库)
-#   2. pkg-config 兜底 (系统开发包)
 # ============================================================
 set(_glib_third_lib "${CMAKE_CURRENT_SOURCE_DIR}/third-lib/glib")
 
 if(EXISTS "${_glib_third_lib}/lib/libglib-2.0.a")
-    # --- third-lib 模式: 使用预编译的静态库 ---
     message(STATUS "  GLib/GIO       : third-lib/")
-
     set(GLIB_INCLUDE_DIRS
         "${_glib_third_lib}/include/glib-2.0"
-        "${_glib_third_lib}/include/glibconfig"
-    )
+        "${_glib_third_lib}/include/glibconfig")
     set(GLIB_LINK_LIBS
         "${_glib_third_lib}/lib/libgio-2.0.a"
         "${_glib_third_lib}/lib/libgobject-2.0.a"
@@ -33,64 +22,109 @@ if(EXISTS "${_glib_third_lib}/lib/libglib-2.0.a")
         "${_glib_third_lib}/lib/libglib-2.0.a"
         "${_glib_third_lib}/lib/libffi.a"
         "${_glib_third_lib}/lib/libpcre2-8.a"
-        pthread dl m
-    )
-
-    add_library(GLIB_IMPORTED INTERFACE IMPORTED)
-    target_include_directories(GLIB_IMPORTED INTERFACE ${GLIB_INCLUDE_DIRS})
-    target_link_libraries(GLIB_IMPORTED INTERFACE ${GLIB_LINK_LIBS})
-
+        pthread dl m)
 else()
-    # --- 系统模式: 使用 pkg-config ---
     find_package(PkgConfig REQUIRED)
-    pkg_check_modules(GLIB REQUIRED gio-2.0)
+    pkg_check_modules(GLIB REQUIRED gio-2.0 gio-unix-2.0)
     message(STATUS "  GLib/GIO       : system (pkg-config)")
-
-    add_library(GLIB_IMPORTED INTERFACE IMPORTED)
-    target_include_directories(GLIB_IMPORTED INTERFACE ${GLIB_INCLUDE_DIRS})
-    target_link_libraries(GLIB_IMPORTED INTERFACE ${GLIB_LIBRARIES})
-    target_compile_options(GLIB_IMPORTED INTERFACE ${GLIB_CFLAGS_OTHER})
+    set(GLIB_INCLUDE_DIRS ${GLIB_INCLUDE_DIRS})
+    set(GLIB_LINK_LIBS   ${GLIB_LIBRARIES})
 endif()
 
 # ============================================================
-# Library: gdbus_cxx (RAII wrappers for GLib/GDBus)
+# gdbus-codegen — XML → C skeleton/proxy
+# ============================================================
+find_program(GDBUS_CODEGEN gdbus-codegen REQUIRED)
+find_program(PYTHON3 python3 REQUIRED)
+
+set(CODEGEN_DIR      "${CMAKE_CURRENT_BINARY_DIR}/generated")
+set(CODEGEN_C_H      "${CODEGEN_DIR}/vehicle-dbus.h")
+set(CODEGEN_C_C      "${CODEGEN_DIR}/vehicle-dbus.c")
+set(CODEGEN_CXX_H    "${CODEGEN_DIR}/vehicle_bindings.hpp")
+set(CODEGEN_CXX_C    "${CODEGEN_DIR}/vehicle_bindings.cpp")
+set(INTF_XML         "${CMAKE_CURRENT_SOURCE_DIR}/interfaces/com.example.Vehicle.xml")
+set(GEN_SCRIPT       "${CMAKE_CURRENT_SOURCE_DIR}/scripts/gen_cpp_bindings.py")
+
+# Step 1: gdbus-codegen → C code
+add_custom_command(
+    OUTPUT  ${CODEGEN_C_H} ${CODEGEN_C_C}
+    COMMAND ${CMAKE_COMMAND} -E make_directory ${CODEGEN_DIR}
+    COMMAND ${GDBUS_CODEGEN}
+        --generate-c-code ${CODEGEN_DIR}/vehicle-dbus
+        --c-namespace Demo
+        --interface-prefix com.example.
+        ${INTF_XML}
+    DEPENDS ${INTF_XML}
+    COMMENT "gdbus-codegen: XML → C skeleton/proxy"
+)
+
+# Step 2: gen_cpp_bindings.py → C++ wrappers
+add_custom_command(
+    OUTPUT  ${CODEGEN_CXX_H} ${CODEGEN_CXX_C}
+    COMMAND ${PYTHON3} ${GEN_SCRIPT} ${INTF_XML}
+        --namespace Demo
+        --interface-prefix com.example.
+        --c-header vehicle-dbus.h
+        --output-header ${CODEGEN_CXX_H}
+        --output-impl ${CODEGEN_CXX_C}
+    DEPENDS ${INTF_XML} ${GEN_SCRIPT}
+    COMMENT "gen_cpp_bindings: XML → C++ wrapper classes"
+)
+
+# ============================================================
+# Library: gdbus_cxx (RAII wrappers — MainLoop, BusName)
 # ============================================================
 add_library(gdbus_cxx STATIC
     src/gdbus_cxx.cpp
 )
 target_include_directories(gdbus_cxx PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${GLIB_INCLUDE_DIRS}
 )
-target_link_libraries(gdbus_cxx PUBLIC GLIB_IMPORTED)
+target_link_libraries(gdbus_cxx PUBLIC ${GLIB_LINK_LIBS})
+if(DEFINED GLIB_CFLAGS_OTHER)
+    target_compile_options(gdbus_cxx PRIVATE ${GLIB_CFLAGS_OTHER})
+endif()
 
 # ============================================================
-# Shared source files (VehicleService + VehicleClient)
+# Library: gdbus_gen — glib-codegen C output + Python C++ output
 # ============================================================
-set(SHARED_SOURCES
-    src/vehicle_service.cpp
-    src/vehicle_client.cpp
+add_library(gdbus_gen STATIC
+    ${CODEGEN_C_C}
+    ${CODEGEN_CXX_C}
 )
+target_include_directories(gdbus_gen PUBLIC
+    ${CODEGEN_DIR}
+    ${GLIB_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}/src   # for any shared types
+)
+target_link_libraries(gdbus_gen PUBLIC ${GLIB_LINK_LIBS})
+if(DEFINED GLIB_CFLAGS_OTHER)
+    target_compile_options(gdbus_gen PRIVATE ${GLIB_CFLAGS_OTHER})
+endif()
 
 # ============================================================
 # Executable: Service
 # ============================================================
 add_executable(gdbus-demo-service
     src/demo_service.cpp
-    ${SHARED_SOURCES}
 )
-target_link_libraries(gdbus-demo-service PRIVATE gdbus_cxx)
 target_include_directories(gdbus-demo-service PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CODEGEN_DIR}
 )
+target_link_libraries(gdbus-demo-service PRIVATE gdbus_cxx gdbus_gen)
+add_dependencies(gdbus-demo-service gdbus_gen)
 
 # ============================================================
 # Executable: Client
 # ============================================================
 add_executable(gdbus-demo-client
     src/demo_client.cpp
-    ${SHARED_SOURCES}
 )
-target_link_libraries(gdbus-demo-client PRIVATE gdbus_cxx)
 target_include_directories(gdbus-demo-client PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${CODEGEN_DIR}
 )
+target_link_libraries(gdbus-demo-client PRIVATE gdbus_cxx gdbus_gen)
+add_dependencies(gdbus-demo-client gdbus_gen)
