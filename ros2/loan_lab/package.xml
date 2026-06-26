@@ -1,0 +1,15 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>loan_lab</name>
+  <version>0.1.0</version>
+  <description>ROS2 Loan Message 零拷贝实验 — 对标 CycloneDDS loan API</description>
+  <maintainer email="user@example.com">lixin</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+
+  <export><build_type>ament_cmake</build_type></export>
+</package>

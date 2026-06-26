@@ -1,0 +1,16 @@
+<?xml version="1.0"?>
+<package format="3">
+  <name>dds_vendor_lab</name>
+  <version>0.1.0</version>
+  <description>ROS2 DDS 供应商切换实验 — FastDDS vs CycloneDDS 对比</description>
+  <maintainer email="user@example.com">lixin</maintainer>
+  <license>Apache-2.0</license>
+
+  <buildtool_depend>ament_cmake</buildtool_depend>
+
+  <depend>rclcpp</depend>
+  <depend>std_msgs</depend>
+  <depend>rmw_implementation</depend>
+
+  <export><build_type>ament_cmake</build_type></export>
+</package>

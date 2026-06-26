@@ -64,24 +64,24 @@ ROS2 (Robot Operating System 2) 是机器人领域的标准中间件，底层基
 ```
 ros2/
 ├── README.md
-├── cpp_pubsub/                      # 简单 String 消息 Demo (已有)
-│
-├── custom_msg/                      # ★ 1. 自定义消息 Topic
+├── topic_lab/                       # ★ 1. 基础Pub/Sub + 自定义消息
 │   ├── msg/VehicleState.msg           ROS2 .msg ← 对应 DDS VehicleState.idl
 │   └── src/
-│       ├── vehicle_publisher.cpp      每 500ms 发布车辆状态
-│       └── vehicle_subscriber.cpp     回调接收 + 计算延迟
+│       ├── basic_pub.cpp              String 发布者
+│       ├── basic_sub.cpp              String 订阅者
+│       ├── vehicle_pub.cpp            自定义消息发布 (500ms)
+│       └── vehicle_sub.cpp            回调接收 + 延迟计算
 │
 ├── service_lab/                     # ★ 2. Service 请求/响应
-│   ├── srv/BatteryQuery.srv           ROS2 Service ← Req+Rep 双 Topic
+│   ├── srv/BatteryQuery.srv
 │   └── src/
 │       ├── battery_server.cpp         维护电池状态, 响应查询
 │       └── battery_client.cpp         每 3s 查询, 异步回调
 │
 ├── action_lab/                      # ★ 3. Action 异步任务
-│   ├── action/NavigateTo.action       ROS2 Action ← 5 Topic 实现
+│   ├── action/NavigateTo.action
 │   └── src/
-│       ├── navigate_server.cpp        模拟导航 5s, 每 200ms 反馈进度
+│       ├── navigate_server.cpp        模拟导航 5s, 200ms 反馈进度
 │       └── navigate_client.cpp        发送目标 → 收反馈 → 收结果
 │
 ├── qos_lab/                         # ★ 4. QoS 对比实验
@@ -89,7 +89,60 @@ ros2/
 │       ├── qos_publisher.cpp          Reliable/BestEffort/TransientLocal
 │       └── qos_subscriber.cpp         丢帧检测 + 延迟对比
 │
-└── dds_bridge/                      # DDS ↔ ROS2 双工桥接 (已有)
+├── lifecycle_lab/                   # ★ 5. Lifecycle 生命周期
+│   └── src/lifecycle_demo.cpp         Unconfigured→Inactive→Active
+│
+├── composition_lab/                 # ★ 6. 进程内 Composition
+│   └── src/composition_demo.cpp       MultiThreadedExecutor
+│
+├── param_lab/                       # ★ 7. 动态参数
+│   └── src/param_demo.cpp             运行时参数变更
+│
+├── launch_lab/                      # ★ 8. Launch 文件编排
+│   ├── launch/demo_launch.py           Talker+Listener + 参数 + Remap
+│   └── src/
+│       ├── talker.cpp
+│       └── listener.cpp
+│
+├── tf2_lab/                         # ★ 9. TF2 坐标变换
+│   ├── launch/tf2_demo.launch.py       静态+动态变换+监听器
+│   └── src/
+│       ├── static_broadcaster.cpp      map→odom (静态)
+│       ├── robot_broadcaster.cpp       odom→base_link (动态+传感器)
+│       └── transform_listener.cpp      全变换链查询
+│
+├── rosbag2_lab/                     # ★ 10. Rosbag2 录制/回放
+│   └── src/
+│       ├── data_generator.cpp          50Hz 正弦波测试数据
+│       ├── bag_recorder.cpp            C++ API 编程式录制
+│       └── bag_player.cpp              C++ API 编程式回放
+│
+├── loan_lab/                        # ★ 11. Loan Message 零拷贝
+│   └── src/
+│       ├── loan_publisher.cpp          borrow_loaned_message
+│       ├── loan_subscriber.cpp         订阅端吞吐统计
+│       └── loan_comparison.cpp         A/B 对比: regular vs loan
+│
+├── multimachine_lab/                # ★ 12. 多机分布式通信
+│   ├── src/
+│   │   ├── discovery_publisher.cpp     ROS_DOMAIN_ID 可配置
+│   │   └── discovery_subscriber.cpp    自动发现对端
+│   └── scripts/
+│       ├── setup_multimachine.sh       配置指南
+│       └── multimachine_guide.sh       诊断工具
+│
+├── dds_vendor_lab/                  # ★ 13. DDS 供应商切换
+│   ├── src/vendor_test_node.cpp        RMW 无关通用节点
+│   ├── scripts/vendor_compare.sh       FastDDS vs CycloneDDS
+│   └── README.md                       RMW 抽象层说明
+│
+├── mqtt_lab/                        # ★ 14. MQTT 桥接
+│   ├── src/ros2_mqtt_bridge.cpp        双向 ROS2↔MQTT
+│   └── scripts/setup_mosquitto.sh
+│
+├── dds_bridge/                      # DDS ↔ ROS2 双工桥接
+├── scripts/run_all_labs.sh          # 一键启动菜单
+├── build/ install/ log/             # colcon 输出
 ```
 
 ---
@@ -146,18 +199,18 @@ ros2 topic echo /vehicle/state
 source /opt/ros/humble/setup.bash
 ```
 
-## 构建 & 运行 (cpp_pubsub)
+## 构建 & 运行 (topic_lab)
 
 ```bash
-cd cpp_pubsub
-colcon build --packages-select ros2_demo_pubsub
+cd ros2
+colcon build --packages-select topic_lab
 source install/setup.bash
 
 # 终端1: 发布者
-ros2 run ros2_demo_pubsub talker
+ros2 run topic_lab basic_pub
 
 # 终端2: 订阅者
-ros2 run ros2_demo_pubsub listener
+ros2 run topic_lab basic_sub
 ```
 
 ## 关键 API (rclcpp)
@@ -184,10 +237,10 @@ ros2 service list         # 列出所有服务
 
 ## 构建 & 运行
 
-### custom_msg
+### topic_lab (自定义消息)
 ```bash
-ros2 run custom_msg vehicle_publisher
-ros2 run custom_msg vehicle_subscriber        # 另一个终端
+ros2 run topic_lab vehicle_publisher
+ros2 run topic_lab vehicle_subscriber        # 另一个终端
 ```
 
 ### service_lab
@@ -219,14 +272,94 @@ ros2 run qos_lab qos_publisher --ros-args -p qos_mode:=transient  # 先发
 ros2 run qos_lab qos_subscriber --ros-args -p qos_mode:=transient  # 后接
 ```
 
+### lifecycle_lab
+```bash
+ros2 run lifecycle_lab lifecycle_demo
+# 观察 Unconfigured→Inactive→Active→Deactivate→Cleanup 状态转换
+```
+
+### composition_lab
+```bash
+timeout 8 ros2 run composition_lab composition_demo
+# PubNode + SubNode 在同一进程, 使用 MultiThreadedExecutor
+```
+
+### param_lab
+```bash
+timeout 10 ros2 run param_lab param_demo
+# 演示运行时 add_on_set_parameters_callback 动态调参
+```
+
+### launch_lab
+```bash
+ros2 launch launch_lab demo_launch.py
+ros2 launch launch_lab demo_launch.py talker_rate:=5.0  # 覆盖参数
+```
+
+### tf2_lab
+```bash
+ros2 launch tf2_lab tf2_demo.launch.py          # 一键启动 3 节点
+ros2 run tf2_tools tf2_echo map laser_frame     # 验证变换链
+ros2 run tf2_tools view_frames                  # 生成 PDF 变换树
+```
+
+### rosbag2_lab
+```bash
+ros2 run rosbag2_lab data_generator   # Terminal 1: 生成 50Hz 正弦波
+ros2 run rosbag2_lab bag_recorder     # Terminal 2: C++ API 录制
+ros2 run rosbag2_lab bag_player       # Terminal 3: C++ API 回放
+# CLI 等价操作:
+ros2 bag record -o my_bag /sensor/data
+ros2 bag play my_bag
+```
+
+### loan_lab
+```bash
+ros2 run loan_lab loan_subscriber    # Terminal 1: 订阅端
+ros2 run loan_lab loan_publisher     # Terminal 2: Loan 发布 (100Hz)
+ros2 run loan_lab loan_comparison    # A/B 对比: regular vs loan
+```
+
+### multimachine_lab
+```bash
+# Machine A (同子网):
+ROS_DOMAIN_ID=5 ros2 run multimachine_lab discovery_publisher --ros-args -p domain_id:=5
+# Machine B (同子网):
+ROS_DOMAIN_ID=5 ros2 run multimachine_lab discovery_subscriber --ros-args -p domain_id:=5
+# Machine B 自动发现 Machine A — 无需配置 IP!
+```
+
+### dds_vendor_lab
+```bash
+# 默认 FastDDS:
+ros2 run dds_vendor_lab vendor_test_node --ros-args -p mode:=pub
+# 切换到 CycloneDDS (需先 sudo apt install ros-humble-rmw-cyclonedds-cpp):
+RMW_IMPLEMENTATION=rmw_cyclonedds_cpp ros2 run dds_vendor_lab vendor_test_node --ros-args -p mode:=sub
+# 两者可以通信! — DDS RTPS wire protocol 保证互操作性
+```
+
+### mqtt_lab
+```bash
+bash mqtt_lab/scripts/setup_mosquitto.sh       # 首次: 安装 mosquitto
+ros2 run mqtt_lab ros2_mqtt_bridge              # 启动桥接
+mosquitto_sub -t "ros2/data"                    # 查看 ROS2→MQTT 数据
+ros2 topic echo /mqtt_cmd                       # 查看 MQTT→ROS2 数据
+```
+
 ## 进阶学习方向
 
-- [x] DDS ↔ ROS2 桥接 (同进程 CycloneDDS + rclcpp)
-- [x] 自定义消息类型 (.msg)
-- [x] Service 请求/响应 (.srv)
-- [x] Action 异步任务+反馈 (.action)
-- [x] QoS 策略对比 (Reliable/BestEffort/TransientLocal)
-- [ ] 零拷贝传输 (Loan Message)
-- [ ] DDS 供应商切换 (FastDDS / CycloneDDS)
-- [ ] 多机分布式通信配置
-- [ ] ROS2 与 MQTT Bridge 集成
+- [x] DDS ↔ ROS2 桥接 (同进程 CycloneDDS + rclcpp) — `dds_bridge`
+- [x] 自定义消息类型 (.msg) — `topic_lab`
+- [x] Service 请求/响应 (.srv) — `service_lab`
+- [x] Action 异步任务+反馈 (.action) — `action_lab`
+- [x] QoS 策略对比 (Reliable/BestEffort/TransientLocal) — `qos_lab`
+- [x] Lifecycle 生命周期 — `lifecycle_lab`
+- [x] 进程内 Composition — `composition_lab`
+- [x] 动态参数 — `param_lab`
+- [x] Launch 文件编排 — `launch_lab`
+- [x] TF2 坐标变换 — `tf2_lab`
+- [x] Rosbag2 录制/回放 — `rosbag2_lab`
+- [x] 零拷贝 Loan Message — `loan_lab`
+- [x] 多机分布式通信 — `multimachine_lab`
+- [x] DDS 供应商切换 — `dds_vendor_lab`
+- [x] ROS2 + MQTT Bridge 集成 — `mqtt_lab`

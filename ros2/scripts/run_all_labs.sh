@@ -19,11 +19,17 @@ show_menu() {
     echo "║  6) compose    进程内 Composition        ║"
     echo "║  7) param      动态参数                  ║"
     echo "║  8) launch     Launch 文件编排           ║"
-    echo "║  9) build      编译全部包                ║"
+    echo "║  9) tf2        坐标变换 (TF2)            ║"
+    echo "║ 10) rosbag2    录制/回放 (Rosbag2)       ║"
+    echo "║ 11) loan       零拷贝 (Loan Message)     ║"
+    echo "║ 12) multimachine 多机分布式通信          ║"
+    echo "║ 13) dds_vendor DDS 供应商切换            ║"
+    echo "║ 14) mqtt       MQTT 桥接                 ║"
+    echo "║ 15) build      编译全部包                ║"
     echo "║  q) 退出                                ║"
     echo "╚══════════════════════════════════════════╝"
     echo ""
-    read -r -p "输入 [1-9/q]: " c
+    read -r -p "输入 [1-15/q]: " c
     case "$c" in
         1) echo "--- 基础 Topic ---"; ros2 run topic_lab basic_pub & sleep 1; ros2 run topic_lab basic_sub; pkill basic_pub ;;
         2) echo "--- Service ---"; ros2 run service_lab battery_server & sleep 1; timeout 10 ros2 run service_lab battery_client; pkill battery_server ;;
@@ -33,7 +39,13 @@ show_menu() {
         6) echo "--- Composition ---"; timeout 8 ros2 run composition_lab composition_demo ;;
         7) echo "--- Parameter ---"; timeout 10 ros2 run param_lab param_demo ;;
         8) echo "--- Launch ---"; ros2 launch launch_lab demo_launch.py ;;
-        9) echo "--- Build All ---"; cd "$WS"; colcon build --packages-select topic_lab service_lab action_lab qos_lab lifecycle_lab composition_lab param_lab launch_lab ;;
+        9) echo "--- TF2 ---"; ros2 launch tf2_lab tf2_demo.launch.py ;;
+        10) echo "--- Rosbag2 ---"; ros2 run rosbag2_lab data_generator & sleep 1; timeout 10 ros2 run rosbag2_lab bag_recorder; pkill data_generator; echo "录制完成, 回放..."; timeout 5 ros2 run rosbag2_lab bag_player ;;
+        11) echo "--- Loan Message ---"; ros2 run loan_lab loan_subscriber & sleep 1; timeout 10 ros2 run loan_lab loan_publisher; pkill loan_subscriber ;;
+        12) echo "--- Multi-Machine ---"; ros2 run multimachine_lab discovery_subscriber --ros-args -p domain_id:=0 & sleep 1; timeout 8 ros2 run multimachine_lab discovery_publisher --ros-args -p domain_id:=0; pkill discovery_subscriber ;;
+        13) echo "--- DDS Vendor ---"; timeout 8 ros2 run dds_vendor_lab vendor_test_node --ros-args -p mode:=pub ;;
+        14) echo "--- MQTT ---"; timeout 10 ros2 run mqtt_lab ros2_mqtt_bridge ;;
+        15) echo "--- Build All ---"; cd "$WS"; colcon build --packages-select topic_lab service_lab action_lab qos_lab lifecycle_lab composition_lab param_lab launch_lab tf2_lab rosbag2_lab loan_lab multimachine_lab dds_vendor_lab mqtt_lab ;;
         q) exit 0 ;;
     esac
 }
