@@ -1,0 +1,14 @@
+# BatteryQuery.srv — 电池查询服务
+#
+# ROS2 Service = Request + Response (两个 Topic)
+# 对应概念: 同步 RPC, DDS 无原生支持
+#
+# ---
+
+# Request (请求, 由 Client 发送)
+---
+# Response (响应, 由 Server 返回)
+float64 battery_level     # 电量 0.0-100.0
+float64 cpu_temp           # CPU 温度
+string  status             # 状态描述
+bool    ok                 # 是否正常

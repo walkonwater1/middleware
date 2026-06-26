@@ -1,0 +1,26 @@
+# NavigateTo.action — 导航任务 Action
+#
+# ROS2 Action = 5 个 Topic 实现:
+#   Goal Topic     → Client→Server: 发送目标
+#   Result Topic    → Server→Client: 返回结果
+#   Feedback Topic  → Server→Client: 进度更新
+#   Cancel Topic    → Client→Server: 取消任务
+#   Status Topic    → Server→Client: 任务状态
+#
+# 工程意义: 机器人导航、充电、抓取等长时间任务
+#
+# ---
+
+# Goal (目标, Client 发送)
+float64 target_x       # 目标 X 坐标
+float64 target_y       # 目标 Y 坐标
+---
+# Result (结果, Server 返回)
+bool    success        # 是否成功
+float64 distance       # 实际移动距离
+---
+# Feedback (反馈, Server 周期性发送)
+float64 progress       # 进度 0.0-100.0
+float64 current_x      # 当前位置 X
+float64 current_y      # 当前位置 Y
+string  status_text    # 状态描述
