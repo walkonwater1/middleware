@@ -1,17 +1,16 @@
 /**
  * SOME/IP 车辆服务端 (vsomeip C++) — 提供车辆数据服务
  *
- * 服务 ID:     0x1234
- * 实例 ID:     0x5678
- * 事件 ID:     0x8001 (车速变更)
- *              0x8002 (车门状态变更)
- * 方法 ID:     0x0001 (控制车窗)
+ * 模式:
+ *   Event:  车速变更 (0x8001), 车门状态 (0x8002)
+ *   Method: 车窗控制 (0x0001)
+ *   Field:  空调温度 (Getter 0x0002 / Setter 0x0003 / Notifier 0x8003)
  *
- * 构建: cmake .. && make
+ * 构建: mkdir -p build && cd build && cmake .. && make
  * 运行: VSOMEIP_CONFIGURATION=../vsomeip-service.json ./vehicle_service
  */
 
-#include <vsomeip/vsomeip.hpp>
+#include "include/vehicle_someip.hpp"
 
 #include <iostream>
 #include <iomanip>
@@ -20,17 +19,9 @@
 #include <chrono>
 #include <atomic>
 #include <random>
-#include <cstring>
+#include <csignal>
 
-/* ============================================================
- * ID 常量定义 (与 .json 配置文件匹配)
- * ============================================================ */
-constexpr vsomeip::service_id_t  SERVICE_ID     = 0x1234;
-constexpr vsomeip::instance_id_t INSTANCE_ID    = 0x5678;
-constexpr vsomeip::event_id_t    EVENT_SPEED    = 0x8001;
-constexpr vsomeip::event_id_t    EVENT_DOOR     = 0x8002;
-constexpr vsomeip::method_id_t   METHOD_WINDOW  = 0x0001;
-constexpr vsomeip::eventgroup_id_t EVENTGROUP_VEHICLE = 0x0001;
+using namespace vehicle;
 
 /* ============================================================
  * 全局变量
@@ -40,77 +31,88 @@ static std::atomic<bool> g_running{true};
 
 static double       g_speed       = 0.0;
 static bool         g_door_open   = false;
-static int          g_window_pos  = 50;   /* 车窗开度 0~100 */
+static int          g_window_pos  = 50;     /* 车窗开度 0~100 */
+static ClimateSettings g_climate;           /* 空调设置 */
 static std::mt19937 g_rng{std::random_device{}()};
+static int          g_tick = 0;
 
 /* ============================================================
- * 辅助函数: 序列化
+ * 信号处理
  * ============================================================ */
-static std::shared_ptr<vsomeip::payload>
-create_speed_payload(double speed)
-{
-    auto payload = vsomeip::runtime::get()->create_payload();
-    std::vector<vsomeip::byte_t> data(sizeof(double));
-    std::memcpy(data.data(), &speed, sizeof(double));
-    payload->set_data(data);
-    return payload;
-}
-
-static std::shared_ptr<vsomeip::payload>
-create_door_payload(bool door_open)
-{
-    auto payload = vsomeip::runtime::get()->create_payload();
-    std::vector<vsomeip::byte_t> data(sizeof(bool));
-    data[0] = door_open ? 1 : 0;
-    payload->set_data(data);
-    return payload;
-}
-
-static std::shared_ptr<vsomeip::payload>
-create_window_payload(int position)
-{
-    auto payload = vsomeip::runtime::get()->create_payload();
-    std::vector<vsomeip::byte_t> data(sizeof(int));
-    std::memcpy(data.data(), &position, sizeof(int));
-    payload->set_data(data);
-    return payload;
-}
+static void on_signal(int) { g_running = false; }
 
 /* ============================================================
- * 方法调用处理: 控制车窗
+ * 车窗控制方法
  * ============================================================ */
 static void on_window_control(const std::shared_ptr<vsomeip::message> &request)
 {
-    /* 解析请求: 期望的窗位置 (0=关, 100=全开) */
-    auto payload = request->get_payload();
-    int target_pos = g_window_pos;
+    int target_pos = deserialize_window(request->get_payload());
 
-    if (payload && payload->get_length() >= sizeof(int)) {
-        std::memcpy(&target_pos, payload->get_data(), sizeof(int));
-    }
-
-    /* 范围限制 */
     if (target_pos < 0)  target_pos = 0;
     if (target_pos > 100) target_pos = 100;
 
     g_window_pos = target_pos;
-    std::cout << "[SERVICE] 车窗控制请求: " << target_pos
-              << "% (来自: " << std::hex << request->get_client() << std::dec
+    std::cout << "[SERVICE] 车窗控制: " << target_pos
+              << "% (client=0x" << std::hex << request->get_client() << std::dec
               << ")" << std::endl;
 
-    /* 构造响应 */
     auto response = vsomeip::runtime::get()->create_response(request);
-    auto resp_payload = create_window_payload(g_window_pos);
-    response->set_payload(resp_payload);
+    response->set_payload(serialize_window(g_window_pos));
     response->set_message(vsomeip::message_type_e::MT_RESPONSE);
     response->set_return_code(vsomeip::return_code_e::E_OK);
-
     g_app->send(response);
-    std::cout << "[SERVICE] 车窗控制完成: " << g_window_pos << "%" << std::endl;
 }
 
 /* ============================================================
- * 状态变更注册处理
+ * 空调温度 Getter (Field Get)
+ * ============================================================ */
+static void on_climate_get(const std::shared_ptr<vsomeip::message> &request)
+{
+    std::cout << "[SERVICE] 空调温度查询 (client=0x"
+              << std::hex << request->get_client() << std::dec
+              << ") → " << g_climate.temperature << "°C" << std::endl;
+
+    auto response = vsomeip::runtime::get()->create_response(request);
+    response->set_payload(serialize_climate_temp(g_climate.temperature));
+    response->set_message(vsomeip::message_type_e::MT_RESPONSE);
+    response->set_return_code(vsomeip::return_code_e::E_OK);
+    g_app->send(response);
+}
+
+/* ============================================================
+ * 空调温度 Setter (Field Set)
+ * ============================================================ */
+static void on_climate_set(const std::shared_ptr<vsomeip::message> &request)
+{
+    double new_temp = deserialize_climate_temp(request->get_payload());
+
+    /* 范围限制 */
+    if (new_temp < 16.0) new_temp = 16.0;
+    if (new_temp > 32.0) new_temp = 32.0;
+
+    double old_temp = g_climate.temperature;
+    g_climate.temperature = new_temp;
+
+    std::cout << "[SERVICE] 空调温度设置: " << old_temp << "°C → "
+              << new_temp << "°C (client=0x"
+              << std::hex << request->get_client() << std::dec << ")"
+              << std::endl;
+
+    /* 设置成功后, 通过 Notifier 事件通知所有订阅者 */
+    g_app->notify(SERVICE_ID, INSTANCE_ID, EVENT_CLIMATE_TEMP,
+                  serialize_climate_temp(g_climate.temperature));
+    std::cout << "[SERVICE]   已通知所有订阅者温度变更" << std::endl;
+
+    /* 响应 Setter */
+    auto response = vsomeip::runtime::get()->create_response(request);
+    response->set_payload(serialize_climate_temp(g_climate.temperature));
+    response->set_message(vsomeip::message_type_e::MT_RESPONSE);
+    response->set_return_code(vsomeip::return_code_e::E_OK);
+    g_app->send(response);
+}
+
+/* ============================================================
+ * 状态回调
  * ============================================================ */
 static void on_state_registered(vsomeip::state_type_e state)
 {
@@ -127,10 +129,12 @@ int main(int argc, char **argv)
     (void)argc;
     (void)argv;
 
-    /* 1. 获取运行时 & 创建应用 */
+    signal(SIGINT, on_signal);
+    signal(SIGTERM, on_signal);
+
+    /* 1. 运行时 & 应用 */
     auto runtime = vsomeip::runtime::get();
     g_app = runtime->create_application("vehicle_service");
-
     if (!g_app) {
         std::cerr << "[ERR] 创建应用失败" << std::endl;
         return 1;
@@ -146,82 +150,92 @@ int main(int argc, char **argv)
     g_app->register_state_handler(
         std::bind(&on_state_registered, std::placeholders::_1));
 
-    /* 注册车窗控制方法处理器 */
-    g_app->register_message_handler(
-        SERVICE_ID, INSTANCE_ID, METHOD_WINDOW,
+    /* Method: 车窗控制 */
+    g_app->register_message_handler(SERVICE_ID, INSTANCE_ID, METHOD_WINDOW,
         std::bind(&on_window_control, std::placeholders::_1));
+
+    /* Field Get/Set: 空调温度 */
+    g_app->register_message_handler(SERVICE_ID, INSTANCE_ID, METHOD_CLIMATE_GET,
+        std::bind(&on_climate_get, std::placeholders::_1));
+    g_app->register_message_handler(SERVICE_ID, INSTANCE_ID, METHOD_CLIMATE_SET,
+        std::bind(&on_climate_set, std::placeholders::_1));
 
     /* 4. 提供服务 */
     g_app->offer_service(SERVICE_ID, INSTANCE_ID);
-    std::cout << "[SERVICE] 车辆服务已提供" << std::endl;
-    std::cout << "  Service ID:  0x" << std::hex << SERVICE_ID << std::dec << std::endl;
-    std::cout << "  Instance ID: 0x" << std::hex << INSTANCE_ID << std::dec << std::endl;
+    std::cout << "[SERVICE] ═══ 车辆服务已提供 ═══" << std::endl;
+    print_ids();
 
-    /* 5. 注册并初始化事件 */
-    {
-        /* 车速事件 */
-        std::set<vsomeip::eventgroup_id_t> groups = {EVENTGROUP_VEHICLE};
-        g_app->offer_event(SERVICE_ID, INSTANCE_ID, EVENT_SPEED, groups,
+    /* 5. 注册事件 */
+    std::set<vsomeip::eventgroup_id_t> groups = {EVENTGROUP_VEHICLE};
+
+    auto offer_ev = [&](vsomeip::event_id_t eid, const char* name) {
+        g_app->offer_event(SERVICE_ID, INSTANCE_ID, eid, groups,
                            vsomeip::event_type_e::ET_EVENT,
                            std::chrono::milliseconds::zero(),
                            false, true, nullptr,
                            vsomeip::reliability_type_e::RT_UNRELIABLE);
-    }
-    {
-        std::set<vsomeip::eventgroup_id_t> groups = {EVENTGROUP_VEHICLE};
-        g_app->offer_event(SERVICE_ID, INSTANCE_ID, EVENT_DOOR, groups,
-                           vsomeip::event_type_e::ET_EVENT,
-                           std::chrono::milliseconds::zero(),
-                           false, true, nullptr,
-                           vsomeip::reliability_type_e::RT_UNRELIABLE);
-    }
+        std::cout << "[SERVICE]   事件 " << name
+                  << " (0x" << std::hex << eid << std::dec << ")" << std::endl;
+    };
 
-    /* 6. 启动应用 (在独立线程中运行消息循环) */
+    offer_ev(EVENT_SPEED, "SPEED");
+    offer_ev(EVENT_DOOR, "DOOR");
+    offer_ev(EVENT_CLIMATE_TEMP, "CLIMATE_TEMP (Field Notifier)");
+
+    /* 6. 启动 */
     g_app->start();
-    std::cout << "[SERVICE] 服务已启动, 开始模拟车辆数据..." << std::endl;
+    std::cout << "[SERVICE] 开始模拟车辆数据... (Ctrl-C 退出)" << std::endl;
+    std::cout << std::endl;
 
-    /* 7. 模拟车辆数据变化循环 */
+    /* 7. 模拟循环 */
     std::uniform_real_distribution<double> speed_noise(-2.0, 2.0);
-    int tick = 0;
+    std::uniform_real_distribution<double> temp_drift(-0.3, 0.3);
 
     while (g_running) {
-        tick++;
+        g_tick++;
 
-        /* 模拟车速变化 (0→80→60→0 循环) */
-        if (tick <= 10) {
-            g_speed += 8.0;                        /* 加速 0→80 */
-        } else if (tick <= 20) {
-            g_speed += speed_noise(g_rng);         /* 巡航 */
-        } else if (tick <= 25) {
-            g_speed -= 16.0;                       /* 减速 */
+        /* 车速模拟 */
+        if (g_tick <= 10) {
+            g_speed += 8.0;
+        } else if (g_tick <= 20) {
+            g_speed += speed_noise(g_rng);
+        } else if (g_tick <= 25) {
+            g_speed -= 16.0;
         } else {
-            g_speed = 0.0;                         /* 停车 */
-            if (tick > 30) tick = 0;
+            g_speed = 0.0;
+            if (g_tick > 30) g_tick = 0;
         }
-
         if (g_speed < 0.0) g_speed = 0.0;
         if (g_speed > 120.0) g_speed = 120.0;
 
-        /* 模拟车门状态 */
-        if (g_speed == 0.0 && tick % 10 == 0) {
+        /* 车门模拟 */
+        if (g_speed == 0.0 && g_tick % 10 == 0) {
             g_door_open = !g_door_open;
         } else if (g_speed > 0.0) {
             g_door_open = false;
         }
 
-        /* 通知车速事件 */
+        /* 空调温度漂移 */
+        g_climate.temperature += temp_drift(g_rng);
+        if (g_climate.temperature < 16.0) g_climate.temperature = 16.0;
+        if (g_climate.temperature > 32.0) g_climate.temperature = 32.0;
+
+        /* 通知事件 */
         g_app->notify(SERVICE_ID, INSTANCE_ID, EVENT_SPEED,
-                      create_speed_payload(g_speed));
-
-        std::cout << "[SERVICE] 事件: speed=" << std::fixed << std::setprecision(1)
-                  << g_speed << " km/h";
-
-        /* 通知车门事件 */
+                      serialize_speed(g_speed));
         g_app->notify(SERVICE_ID, INSTANCE_ID, EVENT_DOOR,
-                      create_door_payload(g_door_open));
+                      serialize_door(g_door_open));
+        g_app->notify(SERVICE_ID, INSTANCE_ID, EVENT_CLIMATE_TEMP,
+                      serialize_climate_temp(g_climate.temperature));
 
-        std::cout << " | door=" << (g_door_open ? "开" : "关")
-                  << " | window=" << g_window_pos << "%" << std::endl;
+        std::cout << std::fixed << std::setprecision(1)
+                  << "[SERVICE] speed=" << g_speed << "km/h"
+                  << " | door=" << (g_door_open ? "开" : "关")
+                  << " | window=" << g_window_pos << "%"
+                  << " | climate=" << g_climate.temperature << "°C"
+                  << " (fan=" << g_climate.fan_speed
+                  << " AC=" << (g_climate.ac_on ? "ON" : "OFF") << ")"
+                  << std::endl;
 
         std::this_thread::sleep_for(std::chrono::seconds(1));
     }
@@ -229,7 +243,6 @@ int main(int argc, char **argv)
     /* 8. 清理 */
     g_app->stop_offer_service(SERVICE_ID, INSTANCE_ID);
     g_app->stop();
-    std::cout << "[SERVICE] 服务已停止" << std::endl;
-
+    std::cout << "\n[SERVICE] 服务已停止" << std::endl;
     return 0;
 }
