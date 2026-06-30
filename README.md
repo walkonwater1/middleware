@@ -15,18 +15,18 @@
 | **[EtherCAT](./ethercat/)** | 工业实时以太网，多轴同步 | μs 级 DC 时钟 | 100 Mbps |
 | **[CANopen](./canopen/)** | 基于 CAN 的应用层协议 | ms 级 | 1 Mbps |
 
-**EtherCAT** — "总线即中间件"。帧在从站间"飞读飞写"，主站 1kHz 扫描 3 轴伺服，分布式时钟 <100ns 同步。CoE (CANopen over EtherCAT) 让 CANopen 对象字典运行在 EtherCAT 物理层上。
+**EtherCAT** — "总线即中间件"。帧在从站间"飞读飞写"，主站 1kHz 扫描 3 轴伺服，分布式时钟 <100ns 同步。CoE (CANopen over EtherCAT) 让 CANopen 对象字典运行在 EtherCAT 物理层上。**数据报解析器**完整实现 BRD/BWR/LRD/LWR/APRD/FPWR 等全部读写命令，主站构造真实 EtherCAT 数据报经共享内存帧缓冲区与从站交互，含 WKC 验证。
 
-**CANopen** — 机器人关节的"领域语言"。PDO 循环推送电机状态、SDO 读写配置参数、NMT 管理从机生命周期、Heartbeat + EMCY 监控健康。虚拟 CAN 总线演示，无需真实硬件。
+**CANopen** — 机器人关节的"领域语言"。PDO 循环推送电机状态、SDO 读写配置参数、NMT 管理从机生命周期、Heartbeat + EMCY 监控健康。**SDO 协议完整实现** (Upload/Download/Abort 响应帧)，支持 SocketCAN `vcan0` 桥接，可扩展到真实 CAN 硬件。
 
 ### 车载 SOA (服务导向)
 
 | 中间件 | 定位 | 通信模式 | 传输层 |
 |--------|------|---------|--------|
-| **[SOME/IP](./someip/)** | AUTOSAR 车载以太网 | Service Discovery + RPC | UDP/TCP |
+| **[SOME/IP](./someip/)** | AUTOSAR 车载以太网 | Service Discovery + RPC + Field | UDP/TCP |
 | **[DDS](./dds/)** | 去中心化实时数据分发 | Pub/Sub (P2P, 无 Broker) | UDP 组播 |
 
-**SOME/IP** — AUTOSAR Adaptive 平台标准。Service Discovery 动态发现、Request/Response RPC 远程调用、Fire&Forget 事件推送。演示车载服务端发布车门/车速事件、提供车窗控制方法、客户端自动发现并订阅。
+**SOME/IP** — AUTOSAR Adaptive 平台标准。Service Discovery 动态发现、Method (RPC) 远程调用、Event 事件推送、**Field (Get/Set/Notifier)** 三位一体属性访问。演示车载服务端提供车速/车门事件 + 车窗控制方法 + 空调温度 Field，客户端自动发现并订阅。
 
 **DDS** — OMG 国际标准，ROS2 底层。11 个 Lab 从 Pub/Sub 入门到 QoS/Listener/Security/Benchmark 全覆盖。去中心化无 Broker，SPDP/SEDP 自动发现，20+ QoS 策略组合。
 
@@ -54,9 +54,9 @@
 | **[ZeroMQ](./zmq/)** | 高性能异步消息库 | ~μs 级 | 1 |
 | **[GDBus](./gdbus/)** | Linux 桌面/嵌入式 IPC | ~μs 级 | 1 |
 
-**共享内存** — IPC 延迟下限。`mmap` 映射同一物理页，A 进程写入 B 进程立即可见。信号量保护 + 无锁环形缓冲 SPMC 队列。这是 ROS2 Loan Message 和 iceoryx 的底层原理。
+**共享内存** — IPC 延迟下限。`mmap` 映射同一物理页，A 进程写入 B 进程立即可见。C++17 RAII 封装 (`ShmHandle`/`ShmMapper`/`Shm<T>`)。提供两种无锁队列：**SPSC 环形缓冲区** (load/store, 最高吞吐) 和 **MPMC 有界队列** (CAS + slot turn 计数，支持多生产者多消费者)。
 
-**ZeroMQ** — "不是消息队列，是没有 Broker 的消息库"。REQ/REP 车辆诊断 RPC、PUB/SUB 机器人传感器广播。4 种模式，无需中心节点。
+**ZeroMQ** — "不是消息队列，是没有 Broker 的消息库"。**5 种通信模式全覆盖**：REQ/REP 车辆诊断 RPC、PUB/SUB 传感器广播、PUSH/PULL 管道负载均衡、ROUTER/DEALER 异步诊断、PAIR 独占对双向同步。多线程消费者个数可配置。
 
 **GDBus** — Linux 系统总线的 IPC 标准。XML 接口定义 → gdbus-codegen + Python 代码生成 → C++17 RAII 封装。机器人状态管理服务 + 监控终端，方法/信号/属性齐全。
 
@@ -81,11 +81,13 @@
 | 场景 | 推荐中间件 | 原因 |
 |------|-----------|------|
 | 机器人关节多轴同步控制 | EtherCAT / CANopen | 硬实时、分布式时钟、确定性延迟 |
-| ECU 间服务调用 (车门/车窗) | SOME/IP | Service Discovery、AUTOSAR 标准 |
+| ECU 间服务调用 (车门/车窗) | SOME/IP | Service Discovery、Field Get/Set/Notifier、AUTOSAR 标准 |
 | 自动驾驶传感器数据分发 | DDS (ROS2) | 去中心化、QoS 可配、RTPS 实时 |
 | 机器人上层算法集成 | ROS2 | TF2/rosbag2/Lifecycle 完整工具链 |
-| 激光雷达点云进程间传输 | 共享内存 | 零拷贝、GB/s 级吞吐 |
-| 微服务间异步消息 | ZeroMQ | 无 Broker、灵活拓扑 |
+| 激光雷达点云进程间传输 | 共享内存 | 零拷贝、GB/s 级吞吐、ns 级延迟 |
+| 多线程任务分发 (负载均衡) | 共享内存 MPMC 队列 | CAS 无锁、多消费者并发 |
+| 微服务间异步消息 | ZeroMQ | 无 Broker、5 种灵活拓扑 |
+| 并行任务流水线 | ZeroMQ PUSH/PULL | 自动 round-robin 分发 |
 | Linux 系统服务管理 | GDBus (D-Bus) | systemd/NetworkManager 原生协议 |
 | ECU 间远程方法调用 (诊断/自检) | gRPC | IDL 类型安全、HTTP/2 多路复用、双向流 |
 | 机器人 Web 仪表盘实时监控 | WebSocket | 浏览器原生支持、全双工、低开销帧 |
@@ -95,17 +97,17 @@
 
 ```
 middleware/
-├── ethercat/                   # EtherCAT 工业实时以太网 (1 kHz, 3 轴)
-├── canopen/                    # CANopen 应用层协议 (PDO/SDO/NMT/EMCY)
-├── someip/                     # SOME/IP 车载 SOA (vsomeip)
-├── dds/                        # DDS 去中心化 Pub/Sub (11 Lab)
-├── grpc/                       # gRPC 高性能 RPC (3 模式: Unary/Server Stream/Client Stream)
-├── ros2/                       # ROS2 机器人集成框架 (14 Lab)
-├── shm/                        # 共享内存 IPC (C++17 RAII 封装 + 无锁环形缓冲区)
-├── zmq/                        # ZeroMQ 高性能消息库 (2 模式)
-├── gdbus/                      # GDBus/D-Bus Linux IPC
-├── websocket/                  # WebSocket 全双工 Web 通信 (多客户端广播 + 命令分发)
-├── mqtt/                       # MQTT IoT 协议 (CAN→Protobuf→MQTT)
+├── ethercat/              # EtherCAT 工业实时以太网 (datagram 处理器 + CoE SDO)
+├── canopen/               # CANopen 应用层协议 (SDO完整实现 + SocketCAN 桥接)
+├── someip/                # SOME/IP 车载 SOA (Method + Event + Field 三种模式)
+├── dds/                   # DDS 去中心化 Pub/Sub (11 Lab)
+├── grpc/                  # gRPC 高性能 RPC (3 模式: Unary/Server Stream/Bidi Stream)
+├── ros2/                  # ROS2 机器人集成框架 (16 Lab)
+├── shm/                   # 共享内存 IPC (SPSC ringbuf + MPMC lockfree queue)
+├── zmq/                   # ZeroMQ 高性能消息库 (5 模式: REQ/REP, PUB/SUB, PUSH/PULL, ROUTER/DEALER, PAIR)
+├── gdbus/                 # GDBus/D-Bus Linux IPC
+├── websocket/             # WebSocket 全双工 Web 通信 (多客户端广播 + 命令分发)
+├── mqtt/                  # MQTT IoT 协议 (CAN→Protobuf→MQTT v3/v5/GB32960)
 └── README.md
 ```
 
@@ -113,12 +115,35 @@ middleware/
 
 按通信层次从底层到上层逐步推进：
 
-1. **IPC 基础** → `shm/` (零拷贝原理) → `zmq/` (多模式消息) → `gdbus/` (系统 IPC)
-2. **实时总线** → `canopen/` (CAN 应用层) → `ethercat/` (工业以太网)
-3. **车载 SOA** → `someip/` (AUTOSAR 服务发现) → `dds/` (去中心化 Pub/Sub)
-4. **机器人集成** → `ros2/` (DDS 之上的完整框架，14 Lab)
+1. **IPC 基础** → `shm/` (零拷贝 + 无锁队列) → `zmq/` (5 种通信模式) → `gdbus/` (系统 IPC)
+2. **实时总线** → `canopen/` (CAN 应用层, 完整 SDO) → `ethercat/` (工业以太网, 数据报协议)
+3. **车载 SOA** → `someip/` (AUTOSAR Method/Event/Field) → `dds/` (去中心化 Pub/Sub)
+4. **机器人集成** → `ros2/` (DDS 之上的完整框架，16 Lab)
 5. **云边通信** → `mqtt/` (CAN→云端全链路) → `websocket/` (Web 实时遥测)
 6. **微服务 RPC** → `grpc/` (IDL+HTTP/2 多模式 RPC)
+
+## 快速运行
+
+大部分 Demo 提供一键脚本：
+
+```bash
+# 实时总线
+bash ethercat/scripts/run_demo.sh both     # EtherCAT: 1kHz 3轴伺服
+bash canopen/scripts/run_demo.sh both       # CANopen: CiA 402 伺服驱动
+
+# 车载 SOA
+bash someip/scripts/run_demo.sh both        # SOME/IP: 车辆服务 (Method+Event+Field)
+
+# 进程间通信
+bash shm/scripts/run_demo.sh ringbuf        # 共享内存: SPSC 环形缓冲区
+bash shm/scripts/run_demo.sh lockfree       # 共享内存: MPMC 无锁队列
+bash zmq/scripts/run_demo.sh all            # ZeroMQ: 依次运行全部 5 种模式
+bash zmq/scripts/run_demo.sh push_pull      # ZeroMQ: PUSH/PULL 负载均衡
+
+# Web / RPC
+bash grpc/scripts/run_demo.sh               # gRPC: 3 种 RPC 模式
+bash websocket/scripts/run_demo.sh          # WebSocket: 多客户端广播
+```
 
 ## 构建速查
 
@@ -128,7 +153,7 @@ middleware/
 # EtherCAT         依赖: librt, libpthread
 cd ethercat && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 
-# CANopen          依赖: 无 (需 can-utils + vcan 内核模块)
+# CANopen          依赖: 无外部库 (纯用户态虚拟 CAN 总线)
 cd canopen && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 
 # SOME/IP          依赖: libvsomeip3-dev
@@ -161,6 +186,20 @@ cd grpc && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 # WebSocket        依赖: libwebsocketpp-dev, libboost-system-dev
 cd websocket && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 ```
+
+## 通信模式对照
+
+| 模式 | EtherCAT | CANopen | SOME/IP | DDS | gRPC | ZMQ | MQTT | WebSocket |
+|------|----------|---------|---------|-----|------|-----|------|-----------|
+| Pub/Sub | — | PDO | Event | ✓ | — | PUB/SUB | ✓ | ✓ |
+| Req/Rep | — | SDO | Method | — | Unary | REQ/REP | — | — |
+| Pipeline | — | — | — | — | — | PUSH/PULL | — | — |
+| Async RPC | CoE | — | — | — | Bidi Stream | ROUTER/DEALER | — | — |
+| Field (Get/Set/Notify) | — | — | ✓ | — | — | — | — | — |
+| Exclusive Pair | — | — | — | — | — | PAIR | — | — |
+| Streaming | — | — | — | — | Server/Client Stream | — | — | — |
+| Fire & Forget | — | EMCY | Event | ✓ | — | — | — | — |
+| Discovery | — | NMT | SD | SEDP/SPDP | — | — | — | — |
 
 ## 环境要求
 
