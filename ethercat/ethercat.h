@@ -30,6 +30,7 @@ typedef uint16_t  ec_u16;
 typedef uint32_t  ec_u32;
 typedef uint64_t  ec_u64;
 typedef int32_t   ec_i32;
+typedef int64_t   ec_i64;
 
 // ==========================================================================
 // ESC 寄存器地址 (物理地址, 偏移于 ESC 基址)
@@ -284,6 +285,14 @@ typedef struct {
     EcState  state;
     ec_u16   wkc;
     int      position;
+
+    // 数据报帧缓冲区 (shared memory IPC)
+    ec_u8    frame_in[2048];      /* 主站 → 从站: 待处理数据报 */
+    ec_u16   frame_in_len;
+    ec_u8    frame_ready;         /* 主站置1表示帧就绪, 从站处理后置0 */
+    ec_u8    frame_out[2048];     /* 从站 → 主站: 处理后的响应 */
+    ec_u16   frame_out_len;
+    ec_u8    response_ready;      /* 从站置1表示响应就绪 */
 } VirtualEsc;
 
 // ==========================================================================

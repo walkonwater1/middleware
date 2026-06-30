@@ -203,6 +203,28 @@ void virtual_esc_update(VirtualEsc *esc) {
 
     // 更新过程数据
     esc_update_processdata(esc);
+
+    // 处理来自主站的数据报帧
+    if (esc->frame_ready) {
+        esc->frame_out_len = sizeof(esc->frame_out);
+        virtual_esc_process_frame(esc,
+                                   esc->frame_in, esc->frame_in_len,
+                                   esc->frame_out, &esc->frame_out_len);
+        esc->response_ready = 1;
+        esc->frame_ready = 0;
+
+        /* 更新 SM3 缓冲区: 填入当前伺服轴状态 */
+        if (esc->state == EC_STATE_SAFEOP || esc->state == EC_STATE_OP) {
+            int offset = 0;
+            for (int i = 0; i < 3; i++) {
+                memcpy(esc->sm3_buffer + offset, &esc->axis_actual_pos[i], 4);
+                offset += 4;
+            }
+            /* Status word */
+            ec_u16 status = 0x0237; /* Operation Enabled */
+            memcpy(esc->sm3_buffer + offset, &status, 2);
+        }
+    }
 }
 
 // ==========================================================================

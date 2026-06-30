@@ -85,6 +85,8 @@ typedef struct {
 // ==========================================================================
 static EcxContext g_ctx;
 static SlaveShm *g_shm = NULL;
+static ec_u16 g_working_counter = 0;
+static ec_u64 g_last_send_ns = 0;
 
 int ecx_init(EcxContext *ctx) {
     printf("[MASTER] Initializing EtherCAT master...\n");
@@ -164,25 +166,59 @@ int ecx_statecheck(EcxContext *ctx, EcSlave *slave,
     return 1;
 }
 
+/// 在帧末尾追加一个数据报
+static ec_u8* append_datagram(ec_u8 *frame, ec_u8 cmd, ec_u32 address,
+                              ec_u16 data_len, const ec_u8 *data, int more)
+{
+    frame[0]  = cmd;
+    frame[1]  = 0;
+    frame[2]  = (ec_u8)(address & 0xFF);
+    frame[3]  = (ec_u8)((address >> 8) & 0xFF);
+    frame[4]  = (ec_u8)((address >> 16) & 0xFF);
+    frame[5]  = (ec_u8)((address >> 24) & 0xFF);
+    frame[6]  = (ec_u8)(data_len & 0xFF);
+    frame[7]  = (ec_u8)((data_len >> 8) & 0xFF);
+    frame[8]  = 0;
+    frame[9]  = (ec_u8)more;
+    if (data && data_len > 0)
+        memcpy(frame + 10, data, data_len);
+    return frame + 10 + data_len;
+}
+
 int ecx_send_processdata(EcxContext *ctx) {
     if (!g_shm) return 0;
 
     ctx->cycle_count++;
 
-    // 打包输出数据: 3 轴目标位置
     ec_i32 targets[3] = {
-        1024 + 500 * (ec_i32)(ctx->cycle_count % 200),    // 轴0: 周期性变化
-        2048 - 200 * (ec_i32)(ctx->cycle_count % 150),    // 轴1
-        -512 + 300 * (ec_i32)(ctx->cycle_count % 100),    // 轴2
+        1024 + 500 * (ec_i32)(ctx->cycle_count % 200),
+        2048 - 200 * (ec_i32)(ctx->cycle_count % 150),
+        -512 + 300 * (ec_i32)(ctx->cycle_count % 100),
     };
 
     memcpy(ctx->processdata_output, targets, sizeof(targets));
 
-    // 写入共享内存中的输出区域
-    memcpy(g_shm->esc.sm2_buffer, targets, sizeof(targets));
+    /* 构造 EtherCAT 数据报帧 */
+    ec_u8 frame[256];
+    ec_u8 *p = frame;
 
-    // 记录主站时间 → 用于 DC
+    /* 数据报1: LWR → SM2 (写入目标位置) */
+    ec_u32 sm2_addr = 0x10000002;
+    p = append_datagram(p, EC_CMD_LWR, sm2_addr, sizeof(targets),
+                         (ec_u8*)targets, 1);
+
+    /* 数据报2: LRD → SM3 (读取实际位置+状态) */
+    ec_u32 sm3_addr = 0x10000003;
+    ec_u8 dummy[14] = {0};
+    p = append_datagram(p, EC_CMD_LRD, sm3_addr, 14, dummy, 0);
+
+    ec_u16 frame_len = (ec_u16)(p - frame);
+    memcpy(g_shm->esc.frame_in, frame, frame_len);
+    g_shm->esc.frame_in_len = frame_len;
+    g_shm->esc.frame_ready = 1;
+
     g_shm->esc.dc_time = get_time_ns();
+    g_last_send_ns = g_shm->esc.dc_time;
 
     return 1;
 }
@@ -191,10 +227,26 @@ int ecx_receive_processdata(EcxContext *ctx, int timeout_ms) {
     (void)timeout_ms;
     if (!g_shm) return 0;
 
-    // 从共享内存读取输入数据
-    memcpy(ctx->processdata_input, g_shm->esc.sm3_buffer, 14);
-    g_shm->esc.wkc = (g_shm->esc.wkc + 1) % 65536;
+    /* 等待从站处理完成 */
+    int spin = 0;
+    while (!g_shm->esc.response_ready && spin < 100000) spin++;
 
+    if (!g_shm->esc.response_ready) return 0;
+
+    /* 从 SM3 缓冲区读取过程数据 (已由从站更新) */
+    memcpy(ctx->processdata_input, g_shm->esc.sm3_buffer,
+           ctx->processdata_size);
+
+    /* 提取 WKC */
+    ec_u8 *resp = g_shm->esc.frame_out;
+    ec_u16 resp_len = g_shm->esc.frame_out_len;
+    if (resp_len >= 4) {
+        ec_u16 wkc1 = resp[resp_len - 4] | ((ec_u16)resp[resp_len - 3] << 8);
+        ec_u16 wkc2 = resp[resp_len - 2] | ((ec_u16)resp[resp_len - 1] << 8);
+        g_working_counter = wkc1 + wkc2;
+    }
+
+    g_shm->esc.response_ready = 0;
     return 1;
 }
 
@@ -291,7 +343,7 @@ int main(void) {
             printf("[MASTER] │ %6llu │ %8d │ %8d │ %8d │ 0x%04X   │ %+8lld │\n",
                    (unsigned long long)g_ctx.cycle_count,
                    pos[0], pos[1], pos[2],
-                   g_shm->esc.wkc, (long long)dc_diff);
+                   g_working_counter, (long long)dc_diff);
         }
     }
 

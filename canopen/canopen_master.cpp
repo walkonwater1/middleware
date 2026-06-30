@@ -15,8 +15,10 @@
 
 #include "canopen.hpp"
 #include <chrono>
+#include <cmath>
 #include <csignal>
 #include <cstdio>
+#include <cstring>
 #include <thread>
 
 using namespace canopen;
@@ -94,6 +96,28 @@ int main() {
                slave_id, err, f.data[2]);
     });
 
+    // 3e. 接收 SDO 响应 (从站 COB_TSDO → 主站)
+    bus.subscribe(COB_TSDO(slave_id), [&](const CanFrame& f) {
+        if (f.dlc < 8) return;
+        U8  scs   = f.data[0];
+        U16 index = f.data[1] | (static_cast<U16>(f.data[2]) << 8);
+        U8  sub   = f.data[3];
+
+        if (scs == 0x80) { // Abort
+            U32 abort_code;
+            memcpy(&abort_code, f.data + 4, 4);
+            printf("[MASTER] SDO ← [%04X:%02X] ABORT 0x%08X\n", index, sub, abort_code);
+        } else if (scs == 0x4B) { // Upload Response
+            U32 value;
+            memcpy(&value, f.data + 4, 4);
+            printf("[MASTER] SDO ← [%04X:%02X] = 0x%08X (%u)\n", index, sub, value, value);
+        } else if (scs == 0x60) { // Download Response
+            printf("[MASTER] SDO ← [%04X:%02X] write OK\n", index, sub);
+        } else {
+            printf("[MASTER] SDO ← [%04X:%02X] scs=0x%02X\n", index, sub, scs);
+        }
+    });
+
     // ---- 4. 主站操作流程 ----
     auto log_and_sleep = [](const char* msg, int ms) {
         printf("[MASTER] %s\n", msg);
@@ -109,25 +133,19 @@ int main() {
     std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
     // SDO 读: 设备类型 (0x1000)
-    bus.send(CanFrame(COB_RSDO(slave_id),
-        []{
-            U8 d[8] = {};
-            d[0] = 0x40;           // Initiate Upload
-            d[1] = 0x00; d[2] = 0x10;  // index = 0x1000
-            d[3] = 0x00;           // sub = 0
-            return d;
-        }(), 8));
+    {
+        U8 d[8] = {};
+        d[0] = 0x40; d[1] = 0x00; d[2] = 0x10; d[3] = 0x00;
+        bus.send(CanFrame(COB_RSDO(slave_id), d, 8));
+    }
     log_and_sleep("SDO read Device Type (0x1000)", 50);
 
     // SDO 读: 厂商 ID
-    bus.send(CanFrame(COB_RSDO(slave_id),
-        []{
-            U8 d[8] = {};
-            d[0] = 0x40;
-            d[1] = 0x18; d[2] = 0x10;  // 0x1018
-            d[3] = 0x01;               // sub1: Vendor ID
-            return d;
-        }(), 8));
+    {
+        U8 d[8] = {};
+        d[0] = 0x40; d[1] = 0x18; d[2] = 0x10; d[3] = 0x01;
+        bus.send(CanFrame(COB_RSDO(slave_id), d, 8));
+    }
     log_and_sleep("SDO read Vendor ID (0x1018:01)", 50);
 
     // Step 3: 启动从站 → Operational

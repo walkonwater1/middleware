@@ -16,6 +16,7 @@
 #include <cmath>
 #include <csignal>
 #include <cstdio>
+#include <cstring>
 #include <thread>
 
 using namespace canopen;
@@ -94,13 +95,12 @@ int main(int argc, char* argv[]) {
     });
 
     // 5c. SDO 请求 (通过 COB_RSDO, 客户端→服务端方向)
-    //     此处简化: 在虚拟总线中直接响应
     bus.subscribe(COB_RSDO(node_id), [&](const CanFrame& f) {
         if (nmt.state() == NmtState::Stopped) return;
 
         U8 sdo_cs = f.data[0];  // 命令说明符
         bool is_read = (sdo_cs == 0x40);    // Initiate Upload
-        bool is_write = (sdo_cs == 0x22 || sdo_cs == 0x23 || sdo_cs == 0x21); // Initiate Download
+        bool is_write = (sdo_cs == 0x23 || sdo_cs == 0x2B || sdo_cs == 0x22 || sdo_cs == 0x21); // Download
 
         if (is_read) {
             U16 index = f.data[1] | (static_cast<U16>(f.data[2]) << 8);
@@ -108,19 +108,53 @@ int main(int argc, char* argv[]) {
             U8  buf[4] = {};
             size_t len = 4;
             if (od.sdo_read(index, sub, buf, &len)) {
-                printf("[NODE#%d] SDO read  [%04X:%02X] OK\n", node_id, index, sub);
-                // 正常应回复 SDO 响应帧，此处简化
+                // 构造 SDO Upload 响应帧 (expedited)
+                U8 resp[8] = {};
+                resp[0] = 0x4B;  // Initiate Upload Response (4 bytes, expedited)
+                resp[1] = static_cast<U8>(index & 0xFF);
+                resp[2] = static_cast<U8>((index >> 8) & 0xFF);
+                resp[3] = sub;
+                resp[4] = 0x00; resp[5] = 0x00; resp[6] = 0x00; resp[7] = 0x00;
+                memcpy(resp + 4, buf, len);
+                bus.send(CanFrame(COB_TSDO(node_id), resp, 8));
+                printf("[NODE#%d] SDO upload [%04X:%02X] OK\n", node_id, index, sub);
             } else {
-                printf("[NODE#%d] SDO read  [%04X:%02X] FAIL (no entry)\n", node_id, index, sub);
+                // SDO Abort
+                U8 resp[8] = {};
+                resp[0] = 0x80;  // Abort SDO Transfer
+                resp[1] = static_cast<U8>(index & 0xFF);
+                resp[2] = static_cast<U8>((index >> 8) & 0xFF);
+                resp[3] = sub;
+                U32 abort_code = 0x06020000; // Object does not exist
+                memcpy(resp + 4, &abort_code, 4);
+                bus.send(CanFrame(COB_TSDO(node_id), resp, 8));
+                printf("[NODE#%d] SDO upload [%04X:%02X] FAIL (abort)\n", node_id, index, sub);
             }
         } else if (is_write) {
             U16 index = f.data[1] | (static_cast<U16>(f.data[2]) << 8);
             U8  sub   = f.data[3];
             U32 abort = 0;
             if (od.sdo_write(index, sub, f.data + 4, f.dlc - 4, &abort)) {
-                printf("[NODE#%d] SDO write [%04X:%02X] OK\n", node_id, index, sub);
+                // 构造 SDO Download 响应帧
+                U8 resp[8] = {};
+                resp[0] = 0x60;  // Initiate Download Response
+                resp[1] = static_cast<U8>(index & 0xFF);
+                resp[2] = static_cast<U8>((index >> 8) & 0xFF);
+                resp[3] = sub;
+                resp[4] = 0x00; resp[5] = 0x00; resp[6] = 0x00; resp[7] = 0x00;
+                bus.send(CanFrame(COB_TSDO(node_id), resp, 8));
+                printf("[NODE#%d] SDO download [%04X:%02X] OK\n", node_id, index, sub);
             } else {
-                printf("[NODE#%d] SDO write [%04X:%02X] FAIL (abort=0x%08X)\n", node_id, index, sub, abort);
+                // SDO Abort
+                U8 resp[8] = {};
+                resp[0] = 0x80;
+                resp[1] = static_cast<U8>(index & 0xFF);
+                resp[2] = static_cast<U8>((index >> 8) & 0xFF);
+                resp[3] = sub;
+                memcpy(resp + 4, &abort, 4);
+                bus.send(CanFrame(COB_TSDO(node_id), resp, 8));
+                printf("[NODE#%d] SDO download [%04X:%02X] FAIL (abort=0x%08X)\n",
+                       node_id, index, sub, abort);
             }
         }
     });
