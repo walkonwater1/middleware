@@ -50,9 +50,6 @@ check_deps() {
     if ! dpkg -s libboost-system-dev &>/dev/null 2>&1; then
         missing+=("libboost-system-dev")
     fi
-    if ! dpkg -s libssl-dev &>/dev/null 2>&1; then
-        missing+=("libssl-dev")
-    fi
 
     if [ ${#missing[@]} -gt 0 ]; then
         err "缺少依赖: ${missing[*]}"

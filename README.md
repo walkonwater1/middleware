@@ -158,7 +158,7 @@ cd mqtt && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 # gRPC             依赖: libgrpc++-dev, protobuf-compiler-grpc
 cd grpc && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 
-# WebSocket        依赖: libwebsocketpp-dev, libboost-system-dev, libssl-dev
+# WebSocket        依赖: libwebsocketpp-dev, libboost-system-dev
 cd websocket && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 ```
 

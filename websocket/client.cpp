@@ -18,6 +18,7 @@
 #include <websocketpp/config/asio_no_tls_client.hpp>
 #include <websocketpp/client.hpp>
 
+using websocketpp::connection_hdl;
 typedef websocketpp::client<websocketpp::config::asio_client> WsClient;
 typedef websocketpp::config::asio_client::message_type::ptr message_ptr;
 
@@ -80,10 +81,8 @@ class RobotWsClient {
 public:
     RobotWsClient() {
         client_.init_asio();
-        client_.set_tls_init_handler([](connection_hdl) {
-            return websocketpp::lib::make_shared<boost::asio::ssl::context>(
-                boost::asio::ssl::context::tlsv1);
-        });
+        // 注意: ws:// 明文连接无需 TLS handler
+        // 若需要 wss:// 加密, 使用 asio_client (非 no_tls) + set_tls_init_handler
 
         client_.set_open_handler([this](connection_hdl hdl) {
             std::cout << "✅ 已连接到服务器" << std::endl;
