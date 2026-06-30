@@ -101,7 +101,7 @@ middleware/
 ├── dds/                        # DDS 去中心化 Pub/Sub (11 Lab)
 ├── grpc/                       # gRPC 高性能 RPC (3 模式: Unary/Server Stream/Client Stream)
 ├── ros2/                       # ROS2 机器人集成框架 (14 Lab)
-├── shm/                        # 共享内存 IPC (零拷贝)
+├── shm/                        # 共享内存 IPC (C++17 RAII 封装 + 无锁环形缓冲区)
 ├── zmq/                        # ZeroMQ 高性能消息库 (2 模式)
 ├── gdbus/                      # GDBus/D-Bus Linux IPC
 ├── websocket/                  # WebSocket 全双工 Web 通信 (多客户端广播 + 命令分发)
