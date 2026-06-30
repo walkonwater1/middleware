@@ -46,6 +46,8 @@
 
 /* 复用 C 语言的 ringbuf (无锁 SPSC 队列) */
 #include "ringbuf.h"
+/* 无锁 MPMC 有界队列 */
+#include "lockfree_queue.h"
 
 namespace shm {
 
@@ -305,6 +307,87 @@ public:
 
     T*       data_ptr()       { return data_; }
     CtrlType* ctrl()          { return ctrl_; }
+
+private:
+    ShmHandle  handle_;
+    ShmMapper  mapper_;
+    CtrlType*  ctrl_ = nullptr;
+    T*         data_ = nullptr;
+};
+
+// ============================================================================
+// ShmLockFreeQueue<T, Capacity> — 共享内存无锁 MPMC 有界队列
+//
+//   基于 lockfree_queue.h 的 CAS 槽位 turn 计数算法, 支持多生产者多消费者.
+//   整个控制结构+数据区放在共享内存中.
+//
+//   与 ShmRingBuf 的区别:
+//     - ShmRingBuf     : SPSC (单写单读), load/store only, 最高吞吐
+//     - ShmLockFreeQueue: MPMC (多写多读), CAS + spin, 最灵活
+//
+//   用法:
+//     // 多生产者 (多个进程/线程)
+//     ShmLockFreeQueue<Task, 1024> q("/task_queue", Create);
+//     q.enqueue(task);
+//
+//     // 多消费者 (多个进程/线程)
+//     ShmLockFreeQueue<Task, 1024> q("/task_queue", Open);
+//     Task t;
+//     while (q.dequeue(&t) == 0) { process(t); }
+// ============================================================================
+template<typename T, size_t Capacity>
+class ShmLockFreeQueue {
+    static_assert((Capacity & (Capacity - 1)) == 0,
+                  "Capacity must be a power of 2 (required by lockfree_queue.h)");
+
+public:
+    using CtrlType = lfq_ctrl_t;
+
+    // ---- 创建 ----
+    ShmLockFreeQueue(const char* name, CreateTag tag, mode_t mode = 0666) {
+        size_t total = lfq_total_size(Capacity, sizeof(T));
+        handle_ = ShmHandle(name, tag, mode);
+        handle_.truncate(static_cast<off_t>(total));
+        mapper_ = ShmMapper(handle_.fd(), total);
+        ctrl_   = static_cast<CtrlType*>(mapper_.data());
+        lfq_init(ctrl_, Capacity, sizeof(T));
+        data_   = reinterpret_cast<T*>(
+            ctrl_->cells + sizeof(lfq_atomic_u64));  /* 第一个槽位数据区 */
+    }
+
+    // ---- 打开已有 ----
+    ShmLockFreeQueue(const char* name, OpenTag tag, mode_t mode = 0666) {
+        size_t total = lfq_total_size(Capacity, sizeof(T));
+        handle_ = ShmHandle(name, tag, mode);
+        mapper_ = ShmMapper(handle_.fd(), total);
+        ctrl_   = static_cast<CtrlType*>(mapper_.data());
+        data_   = reinterpret_cast<T*>(
+            ctrl_->cells + sizeof(lfq_atomic_u64));
+    }
+
+    ShmLockFreeQueue(const ShmLockFreeQueue&) = delete;
+    ShmLockFreeQueue& operator=(const ShmLockFreeQueue&) = delete;
+    ShmLockFreeQueue(ShmLockFreeQueue&&) = default;
+    ShmLockFreeQueue& operator=(ShmLockFreeQueue&&) = default;
+
+    // ---- 操作 ----
+    int enqueue(const T& elem) {
+        return lfq_enqueue(ctrl_, &elem);
+    }
+
+    int dequeue(T* elem) {
+        return lfq_dequeue(ctrl_, elem);
+    }
+
+    uint64_t count() const {
+        return lfq_count(ctrl_);
+    }
+
+    bool is_full()  const { return count() >= Capacity; }
+    bool is_empty() const { return count() == 0; }
+
+    T*        data_ptr()       { return data_; }
+    CtrlType* ctrl()           { return ctrl_; }
 
 private:
     ShmHandle  handle_;

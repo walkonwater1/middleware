@@ -7,10 +7,12 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # ============================================================
 # shm — POSIX 共享内存 C++17 Demo
 #
-#   include/shm_cxx.hpp    C++ RAII 封装 (ShmHandle / ShmMapper / Shm<T> / ShmRingBuf)
-#   include/ringbuf.h      无锁环形缓冲区 (C/C++ 双兼容, SPSC)
-#   demo/demo_basic.cpp    基本读写 (车辆传感器)
-#   demo/demo_ringbuf.cpp  无锁环形缓冲区 (机器人关节指令队列)
+#   include/shm_cxx.hpp         C++ RAII 封装 (ShmHandle / ShmMapper / Shm<T> / ShmRingBuf / ShmLockFreeQueue)
+#   include/ringbuf.h           无锁环形缓冲区 (C/C++ 双兼容, SPSC)
+#   include/lockfree_queue.h    无锁有界队列 (C/C++ 双兼容, MPMC)
+#   demo/demo_basic.cpp         基本读写 (车辆传感器)
+#   demo/demo_ringbuf.cpp       无锁环形缓冲区 (机器人关节指令队列)
+#   demo/demo_lockfree_queue.cpp  无锁 MPMC 队列 (多生产者多消费者)
 # ============================================================
 
 # ---- 基本读写 ----
@@ -22,3 +24,8 @@ target_link_libraries(demo_basic rt pthread)
 add_executable(demo_ringbuf demo/demo_ringbuf.cpp)
 target_include_directories(demo_ringbuf PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
 target_link_libraries(demo_ringbuf rt pthread)
+
+# ---- 无锁 MPMC 队列 ----
+add_executable(demo_lockfree_queue demo/demo_lockfree_queue.cpp)
+target_include_directories(demo_lockfree_queue PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+target_link_libraries(demo_lockfree_queue rt pthread)

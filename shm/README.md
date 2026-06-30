@@ -7,13 +7,15 @@
 ```
 shm/
 ├── include/
-│   ├── shm_cxx.hpp       # C++17 RAII 封装 (ShmHandle / ShmMapper / Shm<T> / ShmRingBuf)
-│   └── ringbuf.h         # 无锁环形缓冲区 (C/C++ 双兼容, SPSC, 原子操作)
+│   ├── shm_cxx.hpp         # C++17 RAII 封装 (ShmHandle / ShmMapper / Shm<T> / ShmRingBuf / ShmLockFreeQueue)
+│   ├── ringbuf.h           # 无锁环形缓冲区 (C/C++ 双兼容, SPSC, 原子 load/store)
+│   └── lockfree_queue.h    # 无锁有界队列 (C/C++ 双兼容, MPMC, CAS + turn 计数)
 ├── demo/
-│   ├── demo_basic.cpp    # 基本读写 — 车辆传感器数据共享
-│   └── demo_ringbuf.cpp  # 无锁环形缓冲区 — 机器人关节指令队列
+│   ├── demo_basic.cpp      # 基本读写 — 车辆传感器数据共享
+│   ├── demo_ringbuf.cpp    # 无锁环形缓冲区 — 机器人关节指令队列
+│   └── demo_lockfree_queue.cpp  # 无锁 MPMC 队列 — 多生产者多消费者
 ├── scripts/
-│   └── run_demo.sh       # 一键编译 + 运行
+│   └── run_demo.sh         # 一键编译 + 运行
 ├── CMakeLists.txt
 └── README.md
 ```
@@ -62,6 +64,7 @@ shm->speed = 120.0;
 | `ShmMapper` | 指针 + 大小 | `mmap` → 析构 `munmap` |
 | `Shm<T>` | Handle + Mapper | 持有以上两者, 提供 `operator->` / `operator*` |
 | `ShmRingBuf<T, N>` | Handle + Mapper + ringbuf | 无锁 SPSC 队列 `write()` / `read()` / `count()` |
+| `ShmLockFreeQueue<T, N>` | Handle + Mapper + lfq | 无锁 MPMC 队列 `enqueue()` / `dequeue()` / `count()` |
 
 **关键设计：**
 - **Create vs Open**: `shm::Create` 创建内核对象（析构 `shm_unlink`）；`shm::Open` 仅打开（析构只 `close`）
@@ -74,6 +77,7 @@ shm->speed = 120.0;
 # 一键编译 + 运行
 bash scripts/run_demo.sh           # basic demo (车辆传感器)
 bash scripts/run_demo.sh ringbuf   # ringbuf demo (关节指令队列)
+bash scripts/run_demo.sh lockfree  # lockfree queue demo (多生产者多消费者)
 bash scripts/run_demo.sh build     # 仅编译
 bash scripts/run_demo.sh clean     # 清理
 
@@ -87,6 +91,13 @@ cd build && cmake .. && make -j$(nproc)
 # Demo 2: 无锁环形缓冲区
 ./build/demo_ringbuf producer   # 终端 1 — 20Hz 写入关节轨迹
 ./build/demo_ringbuf consumer   # 终端 2 — 读取并模拟执行
+
+# Demo 3: 无锁 MPMC 队列
+./build/demo_lockfree_queue producer --threads=4   # 终端 1 — 4 个生产者
+./build/demo_lockfree_queue consumer --threads=2   # 终端 2 — 2 个消费者
+
+# 单进程测试
+./build/demo_lockfree_queue both --producers=4 --consumers=2
 ```
 
 ## API 速查
@@ -129,6 +140,39 @@ JointCmd cmd;
 while (q.read(&cmd) == 0) { process(cmd); }
 ```
 
+### ShmLockFreeQueue<T, N> — 无锁 MPMC 有界队列
+
+```cpp
+#include "include/shm_cxx.hpp"
+
+struct Task { uint64_t id; double data[4]; };
+
+// 多生产者 (多个进程/线程)
+shm::ShmLockFreeQueue<Task, 1024> q("/tasks", shm::Create);
+q.enqueue(task);             // 返回 0 成功, -1 队列满
+q.count();                   // 近似队列长度
+
+// 多消费者 (多个进程/线程)
+shm::ShmLockFreeQueue<Task, 1024> q("/tasks", shm::Open);
+Task t;
+while (q.dequeue(&t) == 0) { process(t); }
+```
+
+### SPSC vs MPMC 选择指南
+
+| 特性 | `ShmRingBuf<T, N>` (SPSC) | `ShmLockFreeQueue<T, N>` (MPMC) |
+|------|---------------------------|----------------------------------|
+| 生产者数 | 1 | N |
+| 消费者数 | 1 | N |
+| 同步机制 | 原子 load/store | CAS + 槽位 turn 计数 |
+| 吞吐量 (无竞争) | **最高** (~ns 级) | 高 (~ns 级, CAS 开销小) |
+| 满/空检测 | O(1) 精确 | O(1) 精确 |
+| 适用场景 | 单一数据流 (传感器→处理) | 多源汇入/工作窃取/任务分发 |
+| 算法参考 | 经典 SPSC ring buffer | Vyukov 有界 MPMC 队列 |
+
+**选择建议**: 如果只有一对生产者-消费者, 用 `ShmRingBuf` (更简单, 零 CAS 开销); 
+如果需要多个线程/进程并发读写同一队列, 用 `ShmLockFreeQueue`。
+
 ## 与其他中间件结合
 
 | 场景 | 方案 |
@@ -140,8 +184,8 @@ while (q.read(&cmd) == 0) { process(cmd); }
 
 ## 进阶方向
 
-- [ ] 无锁队列 CAS 原理 — `ringbuf.h` 源码解读
-- [ ] SPSC → MPMC 多写多读扩展
+- [ ] 无锁队列 CAS 原理 — `lockfree_queue.h` 源码解读
+- [x] SPSC → MPMC 多写多读扩展
 - [ ] 共享内存 + DDS/ROS2 零拷贝集成
 - [ ] Huge Page (2MB/1GB) 性能影响
 - [ ] `memfd_create` 匿名共享内存

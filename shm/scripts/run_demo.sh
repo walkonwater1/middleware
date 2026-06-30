@@ -18,6 +18,7 @@ BUILD_DIR="$PROJECT_DIR/build"
 
 BASIC_BIN="$BUILD_DIR/demo_basic"
 RINGBUF_BIN="$BUILD_DIR/demo_ringbuf"
+LOCKFREE_BIN="$BUILD_DIR/demo_lockfree_queue"
 
 # ---- 颜色 ----
 RED='\033[0;31m'
@@ -41,7 +42,7 @@ do_build() {
     cmake "$PROJECT_DIR" -DCMAKE_BUILD_TYPE=Debug
     make -j"$(nproc 2>/dev/null || echo 4)"
 
-    if [ ! -x "$BASIC_BIN" ] || [ ! -x "$RINGBUF_BIN" ]; then
+    if [ ! -x "$BASIC_BIN" ] || [ ! -x "$RINGBUF_BIN" ] || [ ! -x "$LOCKFREE_BIN" ]; then
         err "编译失败!"
         exit 1
     fi
@@ -119,6 +120,39 @@ run_ringbuf() {
 }
 
 # ============================================================
+# 无锁 MPMC 队列 Demo
+# ============================================================
+run_lockfree() {
+    if [ ! -x "$LOCKFREE_BIN" ]; then
+        warn "未编译, 先编译..."
+        do_build
+    fi
+
+    N_PROD="${1:-2}"
+    N_CONS="${2:-2}"
+
+    cleanup() {
+        if [ -n "$P_PID" ] && kill -0 "$P_PID" 2>/dev/null; then
+            kill "$P_PID" 2>/dev/null; wait "$P_PID" 2>/dev/null || true
+        fi
+    }
+    trap cleanup EXIT INT TERM
+
+    title "Demo 3: 无锁 MPMC 队列 — ${N_PROD} producers + ${N_CONS} consumers"
+
+    info "启动 Producer (后台, ${N_PROD} 线程)..."
+    "$LOCKFREE_BIN" producer --threads="$N_PROD" &
+    P_PID=$!
+    sleep 0.5
+
+    info "启动 Consumer (前台, ${N_CONS} 线程, Ctrl-C 退出)..."
+    echo ""
+    "$LOCKFREE_BIN" consumer --threads="$N_CONS"
+
+    cleanup
+}
+
+# ============================================================
 # 用法
 # ============================================================
 print_usage() {
@@ -128,6 +162,7 @@ print_usage() {
     echo "  (无)      自动编译 + 运行 basic demo"
     echo "  basic     基本读写 — 车辆传感器数据共享"
     echo "  ringbuf   无锁环形缓冲区 — 机器人关节指令队列"
+    echo "  lockfree  无锁 MPMC 队列 — 多生产者多消费者"
     echo "  build     仅编译"
     echo "  clean     清理编译产物"
     echo "  help      显示此帮助"
@@ -138,6 +173,11 @@ print_usage() {
     echo ""
     echo "  终端1: ./build/demo_ringbuf producer"
     echo "  终端2: ./build/demo_ringbuf consumer"
+    echo ""
+    echo "  终端1: ./build/demo_lockfree_queue producer --threads=4"
+    echo "  终端2: ./build/demo_lockfree_queue consumer --threads=2"
+    echo ""
+    echo "  单进程: ./build/demo_lockfree_queue both --producers=4 --consumers=2"
 }
 
 # ============================================================
@@ -151,6 +191,9 @@ case "${1:-}" in
         ;;
     ringbuf)
         run_ringbuf
+        ;;
+    lockfree)
+        run_lockfree "$2" "$3"
         ;;
     build)
         do_build
