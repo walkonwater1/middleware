@@ -1,6 +1,6 @@
 # 通信中间件学习
 
-> 车载与机器人通讯中间件学习仓库 — 覆盖从底层 IPC 到云端 IoT 的完整通信技术栈
+> 车载与机器人通讯中间件学习仓库 — 11 种中间件覆盖从底层 IPC 到云端 IoT、从 Web 实时通信到云原生 RPC 的完整通信技术栈
 
 ## 动机
 
@@ -29,6 +29,14 @@
 **SOME/IP** — AUTOSAR Adaptive 平台标准。Service Discovery 动态发现、Request/Response RPC 远程调用、Fire&Forget 事件推送。演示车载服务端发布车门/车速事件、提供车窗控制方法、客户端自动发现并订阅。
 
 **DDS** — OMG 国际标准，ROS2 底层。11 个 Lab 从 Pub/Sub 入门到 QoS/Listener/Security/Benchmark 全覆盖。去中心化无 Broker，SPDP/SEDP 自动发现，20+ QoS 策略组合。
+
+### 云原生 RPC
+
+| 中间件 | 定位 | 通信模式 | 传输层 |
+|--------|------|---------|--------|
+| **[gRPC](./grpc/)** | 高性能 RPC 框架 | Unary + Client/Server/Bidi Stream | HTTP/2 (TCP) |
+
+**gRPC** — Google 开源的云原生 RPC 标准。IDL (Protobuf) 定义接口 → 自动生成类型安全的 Client/Server 桩代码 → HTTP/2 多路复用 + 双向流。演示 Unary RPC (一问一答)、Server Streaming (遥测推送)、Client Streaming (进度上报) 三种模式，6 轴机械臂状态模拟。
 
 ### 机器人中间件
 
@@ -60,6 +68,14 @@
 
 **MQTT** — 车载终端到云端的桥梁。模拟 5 路 CAN 信号 → Protobuf 序列化 → MQTT 发布，支持 MQTT v5 和 GB/T 32960 国标电动车远程监控协议。aarch64 交叉编译支持车载嵌入式部署。
 
+### Web 实时通信
+
+| 中间件 | 定位 | 通信模式 | 传输层 |
+|--------|------|---------|--------|
+| **[WebSocket](./websocket/)** | 全双工实时 Web 通信 | 双向 (Text/Binary Frame) | TCP (HTTP Upgrade) |
+
+**WebSocket** — 浏览器到后端唯一的原生双向通道。TCP 连接经 HTTP Upgrade 后自由收发，无需轮询。演示多客户端并发管理、1s 广播遥测 JSON、命令分发 (status/echo/cmd)、Ping/Pong 心跳。适用于机器人的 Web 仪表盘和 HMI 实时监控。
+
 ## 选型决策矩阵
 
 | 场景 | 推荐中间件 | 原因 |
@@ -71,6 +87,8 @@
 | 激光雷达点云进程间传输 | 共享内存 | 零拷贝、GB/s 级吞吐 |
 | 微服务间异步消息 | ZeroMQ | 无 Broker、灵活拓扑 |
 | Linux 系统服务管理 | GDBus (D-Bus) | systemd/NetworkManager 原生协议 |
+| ECU 间远程方法调用 (诊断/自检) | gRPC | IDL 类型安全、HTTP/2 多路复用、双向流 |
+| 机器人 Web 仪表盘实时监控 | WebSocket | 浏览器原生支持、全双工、低开销帧 |
 | 车辆远程监控/OTA | MQTT | 穿透防火墙、低带宽、QoS 分级 |
 
 ## 目录结构
@@ -81,10 +99,12 @@ middleware/
 ├── canopen/                    # CANopen 应用层协议 (PDO/SDO/NMT/EMCY)
 ├── someip/                     # SOME/IP 车载 SOA (vsomeip)
 ├── dds/                        # DDS 去中心化 Pub/Sub (11 Lab)
-├── ros2/                       # ROS2 机器人集成框架 (16 Lab)
+├── grpc/                       # gRPC 高性能 RPC (3 模式: Unary/Server Stream/Client Stream)
+├── ros2/                       # ROS2 机器人集成框架 (14 Lab)
 ├── shm/                        # 共享内存 IPC (零拷贝)
-├── zmq/                        # ZeroMQ 高性能消息库 (4 模式)
+├── zmq/                        # ZeroMQ 高性能消息库 (2 模式)
 ├── gdbus/                      # GDBus/D-Bus Linux IPC
+├── websocket/                  # WebSocket 全双工 Web 通信 (多客户端广播 + 命令分发)
 ├── mqtt/                       # MQTT IoT 协议 (CAN→Protobuf→MQTT)
 └── README.md
 ```
@@ -96,8 +116,9 @@ middleware/
 1. **IPC 基础** → `shm/` (零拷贝原理) → `zmq/` (多模式消息) → `gdbus/` (系统 IPC)
 2. **实时总线** → `canopen/` (CAN 应用层) → `ethercat/` (工业以太网)
 3. **车载 SOA** → `someip/` (AUTOSAR 服务发现) → `dds/` (去中心化 Pub/Sub)
-4. **机器人集成** → `ros2/` (DDS 之上的完整框架，16 Lab)
-5. **云边通信** → `mqtt/` (CAN→云端全链路)
+4. **机器人集成** → `ros2/` (DDS 之上的完整框架，14 Lab)
+5. **云边通信** → `mqtt/` (CAN→云端全链路) → `websocket/` (Web 实时遥测)
+6. **微服务 RPC** → `grpc/` (IDL+HTTP/2 多模式 RPC)
 
 ## 构建速查
 
@@ -133,6 +154,12 @@ cd gdbus && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 
 # MQTT             依赖: libpaho-mqtt-dev, protobuf-c-compiler
 cd mqtt && mkdir -p build && cd build && cmake .. && make -j$(nproc)
+
+# gRPC             依赖: libgrpc++-dev, protobuf-compiler-grpc
+cd grpc && mkdir -p build && cd build && cmake .. && make -j$(nproc)
+
+# WebSocket        依赖: libwebsocketpp-dev, libboost-system-dev, libssl-dev
+cd websocket && mkdir -p build && cd build && cmake .. && make -j$(nproc)
 ```
 
 ## 环境要求

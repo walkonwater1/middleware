@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package robot;
+
+// 机器人状态枚举
+enum RobotState {
+  UNKNOWN = 0;
+  IDLE = 1;
+  RUNNING = 2;
+  CHARGING = 3;
+  FAULT = 4;
+  EMERGENCY_STOP = 5;
+}
+
+// 关节状态
+message JointStatus {
+  string name = 1;        // 关节名称 (如 "joint_1")
+  double position = 2;     // 位置 (rad)
+  double velocity = 3;     // 速度 (rad/s)
+  double torque = 4;       // 扭矩 (Nm)
+  double temperature = 5;  // 温度 (°C)
+}
+
+// 任务信息
+message TaskInfo {
+  string task_id = 1;
+  string description = 2;
+  double progress = 3;     // 0.0 ~ 100.0
+}
+
+// ---- Unary RPC: 查询机器人状态 ----
+
+message GetStatusRequest {
+  string robot_id = 1;
+}
+
+message GetStatusResponse {
+  string robot_id = 1;
+  RobotState state = 2;
+  double battery = 3;                 // 电池电量 (%)
+  repeated JointStatus joints = 4;    // 6 轴关节状态
+  TaskInfo current_task = 5;          // 当前任务(无任务则为空)
+  int64 timestamp_ms = 6;             // 时间戳
+}
+
+// ---- Server Streaming: 订阅机器人遥测 ----
+
+message StreamTelemetryRequest {
+  string robot_id = 1;
+  int32 interval_ms = 2;              // 推送间隔 (默认 1000ms)
+}
+
+message TelemetrySample {
+  string robot_id = 1;
+  double battery = 2;
+  double cpu_usage = 3;               // CPU 使用率 (%)
+  double mem_usage = 4;               // 内存使用率 (%)
+  repeated JointStatus joints = 5;
+  int64 timestamp_ms = 6;
+}
+
+// ---- Client Streaming: 上报任务进度 ----
+
+message TaskReport {
+  string task_id = 1;
+  double progress = 2;
+  string message = 3;                 // 可选备注
+}
+
+message TaskSummary {
+  string task_id = 1;
+  bool completed = 2;
+  double total_progress = 3;
+  int32 report_count = 4;             // 收到上报次数
+}
+
+// 机器人状态服务
+service RobotService {
+  // Unary RPC: 查询即时状态
+  rpc GetStatus(GetStatusRequest) returns (GetStatusResponse);
+
+  // Server Streaming: 服务端持续推送遥测数据
+  rpc StreamTelemetry(StreamTelemetryRequest) returns (stream TelemetrySample);
+
+  // Client Streaming: 客户端持续上报任务进度
+  rpc ReportTaskProgress(stream TaskReport) returns (TaskSummary);
+}
